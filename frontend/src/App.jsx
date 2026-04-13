@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import Pipeline from './pages/Pipeline'
 import DealDetail from './pages/DealDetail'
 import NewDeal from './pages/NewDeal'
+import Strategies from './pages/Strategies'
 
 function App() {
   const [page, setPage] = useState('dashboard')
@@ -36,6 +37,7 @@ function App() {
         if (e.key === 'd') setPage('dashboard')
         if (e.key === 'p') setPage('pipeline')
         if (e.key === 'n') setPage('new-deal')
+        if (e.key === 's') setPage('strategies')
       }
       if (e.key === 'Escape') navigateBack()
     }
@@ -53,6 +55,8 @@ function App() {
         return <DealDetail dealId={selectedDealId} onBack={navigateBack} />
       case 'new-deal':
         return <NewDeal onCreated={(id) => { navigateToDeal(id) }} onCancel={() => setPage('pipeline')} />
+      case 'strategies':
+        return <Strategies />
       default:
         return <Dashboard onNavigateToDeal={navigateToDeal} onNavigate={setPage} />
     }

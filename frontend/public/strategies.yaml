@@ -1,0 +1,444 @@
+# CWP Pre-Approved Strategy Menu
+# ---------------------------------------------------------------
+# Edit freely. The strategy-screen skill evaluates each entry below
+# against a deal's deal-state.json (steps 1-3: zoning, site, market)
+# and returns viability scoring per strategy.
+#
+# Schema:
+#   id:              short kebab-case slug (stable identifier)
+#   name:            human-readable label
+#   category:        product | capital | financing | execution
+#   short_desc:      one-line summary
+#   fit_criteria:    signals that suggest this strategy IS a good fit
+#   kill_criteria:   signals that make this strategy NOT viable
+#   typical_density: u/a range (null if not density-driven)
+#   typical_product: garden | midrise | hirise | townhome | sfh | mixed | n/a
+#   min_acreage:     smallest site this works on (acres); null if n/a
+#   max_acreage:     largest site before diseconomies (acres); null if n/a
+#   rent_floor_psf:  minimum $/SF achievable rent to pencil; null if n/a
+#   notes:           freeform context/links/playbook references
+#
+# Jack: add/remove/reorder strategies, edit criteria to match your
+# real thresholds, and drop freeform notes. The skill reads this file
+# at runtime so changes take effect on the next screen run.
+# ---------------------------------------------------------------
+
+version: 1
+last_updated: 2026-04-13
+
+strategies:
+
+  # ----- PRODUCT-TYPE STRATEGIES -----------------------------------
+
+  - id: garden-mf
+    name: "Garden Apartment (Type V, 2-3 story)"
+    category: product
+    short_desc: Surface-parked wood-frame garden apartments, CWP's bread-and-butter product.
+    fit_criteria:
+      - "Height limit <= 45 ft OR only 2-3 stories allowed by-right"
+      - "Zoning density 15-25 u/a"
+      - "Market rent $1.20-$2.00/SF"
+      - "Surface parking feasible on site"
+      - "Flat or gently sloping site"
+    kill_criteria:
+      - "Zoning density > 30 u/a (leaves money on the table)"
+      - "Rent/SF > $2.00 (midrise pencils better)"
+      - "Site < 5 acres (too small for efficient garden layout)"
+    typical_density: "15-25"
+    typical_product: garden
+    min_acreage: 5
+    max_acreage: 40
+    rent_floor_psf: 1.20
+    notes: |
+      Baseline hard cost: VA $175, NC $170, SC $165, GA $168, FL $180 per SF.
+      Comp reference: Avia @ 17.75 u/a (3-story), HSN / Avia 3-story density.
+
+  - id: midrise-mf
+    name: "Midrise Apartment (Type III, 4-5 story)"
+    category: product
+    short_desc: Podium or structured-parking midrise; higher density, higher rent targets.
+    fit_criteria:
+      - "Height limit >= 55 ft"
+      - "Zoning density 25-40 u/a"
+      - "Rent/SF >= $1.80"
+      - "Urban or dense suburban context"
+    kill_criteria:
+      - "Height limit < 55 ft"
+      - "Rent/SF < $1.50 (construction cost won't pencil)"
+      - "No structured parking feasible and surface can't fit density"
+    typical_density: "25-40"
+    typical_product: midrise
+    min_acreage: 3
+    max_acreage: 15
+    rent_floor_psf: 1.80
+    notes: |
+      Baseline hard cost: VA $235, NC $225, SC $220, GA $225, FL $240 per SF.
+      Comp reference: HSS surface / Pouncey 4-story @ 30 u/a.
+
+  - id: hirise-mf
+    name: "High-Rise Apartment (Type I, 6+ story)"
+    category: product
+    short_desc: Urban high-rise; concrete construction, highest density.
+    fit_criteria:
+      - "Height limit >= 70 ft"
+      - "Zoning density > 40 u/a"
+      - "Rent/SF >= $2.50"
+      - "True urban / CBD context"
+    kill_criteria:
+      - "Height limit < 70 ft"
+      - "Rent/SF < $2.25"
+      - "Market size too small to absorb unit count"
+    typical_density: "40-80+"
+    typical_product: hirise
+    min_acreage: 0.5
+    max_acreage: 5
+    rent_floor_psf: 2.25
+    notes: |
+      CWP has limited high-rise experience; flag key-man / execution risk.
+
+  - id: townhome-btr
+    name: "Townhome BTR (attached 3-story)"
+    category: product
+    short_desc: Single-operator attached townhomes for rent, 10-12 u/a.
+    fit_criteria:
+      - "Zoning density 10-14 u/a"
+      - "Market supports 10-25% BTR premium over comparable MF"
+      - "Family demographic / school quality"
+      - "Site can accommodate yards / front-loading garages"
+    kill_criteria:
+      - "Zoning density < 8 u/a (too low to pencil)"
+      - "Zoning density > 16 u/a (leaves density on table)"
+      - "No family demand signal in market data"
+    typical_density: "10-12"
+    typical_product: townhome
+    min_acreage: 8
+    max_acreage: 30
+    rent_floor_psf: 1.40
+    notes: |
+      Baseline hard cost: VA $155, NC $150, SC $145, GA $148, FL $155 per SF.
+      Avg tenure ~2x conventional MF. Design for dogs (yards, dog doors, dog parks).
+
+  - id: sfh-btr
+    name: "Single-Family BTR (detached)"
+    category: product
+    short_desc: Detached SFR-for-rent community, 4-6 u/a.
+    fit_criteria:
+      - "Zoning allows detached residential"
+      - "Site 20+ acres"
+      - "Family demographic / strong school district"
+      - "Market supports 15-25% premium over MF rent"
+    kill_criteria:
+      - "Site < 15 acres"
+      - "Density-restricted below 3 u/a (land cost breaks)"
+      - "Urban infill context"
+    typical_density: "4-6"
+    typical_product: sfh
+    min_acreage: 15
+    max_acreage: 80
+    rent_floor_psf: 1.50
+    notes: |
+      Consider homebuilder partnership (see Greenwood discussion, West Creek BTR).
+
+  - id: two-over-two-btr
+    name: "2-Over-2 / Quadplex BTR (fewer unit types + waitlist)"
+    category: product
+    short_desc: Simplified unit-type count; waitlist-operations strategy for near-100% occupancy.
+    fit_criteria:
+      - "Zoning density 8-14 u/a"
+      - "Market supports large-unit premium"
+      - "Long-term hold intent"
+      - "Family / empty-nester demographic"
+    kill_criteria:
+      - "High urban rent/SF market (leaves money on table)"
+      - "Short-hold / merchant-build intent"
+    typical_density: "8-14"
+    typical_product: townhome
+    min_acreage: 10
+    max_acreage: 40
+    rent_floor_psf: 1.30
+    notes: |
+      Top unit typically oversized, rented at relative bargain for stickiness.
+      Enables reduced amenity package and simpler ops. See Pruitt / Hampton angle.
+
+  - id: cottage-community
+    name: "Cottage Community (detached or small-lot attached)"
+    category: product
+    short_desc: Low-rise niche product; premium per-unit cost, premium rent.
+    fit_criteria:
+      - "Zoning density 6-12 u/a"
+      - "Premium niche market"
+      - "Site has character (trees, topography, water feature)"
+    kill_criteria:
+      - "Commodity suburban market"
+      - "Rent/SF < $1.60"
+    typical_density: "6-12"
+    typical_product: sfh
+    min_acreage: 5
+    max_acreage: 25
+    rent_floor_psf: 1.60
+    notes: |
+      Premium niche. Only works where you can charge for the design.
+
+  - id: active-adult-55
+    name: "55+ Active Adult"
+    category: product
+    short_desc: Age-restricted midrise or garden; fewer unit types, sticky tenants.
+    fit_criteria:
+      - "Strong 55+ demographic cohort (growing)"
+      - "Good medical access"
+      - "Zoning density 20-35 u/a"
+      - "Market undersupplied in age-restricted"
+    kill_criteria:
+      - "Young-skew demographic area"
+      - "Density < 15 u/a (55+ needs scale for amenities)"
+    typical_density: "20-35"
+    typical_product: midrise
+    min_acreage: 3
+    max_acreage: 15
+    rent_floor_psf: 1.60
+    notes: |
+      Fewer unit types works well here too; waitlist ops possible.
+
+  - id: mixed-horizontal
+    name: "Mixed-Horizontal (TH + Garden MF on one site)"
+    category: product
+    short_desc: Blended product; flexibility to hit target density while capturing TH premium.
+    fit_criteria:
+      - "Site 20+ acres"
+      - "Zoning allows both product types"
+      - "Submarket has BTR/TH demand AND conventional MF demand"
+    kill_criteria:
+      - "Site < 15 acres (too small to split)"
+      - "Single-product mandate from capital partner"
+    typical_density: "12-20 (blended)"
+    typical_product: mixed
+    min_acreage: 15
+    max_acreage: 60
+    rent_floor_psf: 1.30
+    notes: |
+      See Mixed Residential notes: 470 units @ 12.63 u/a on 37.2 acres typical.
+      Adds operational complexity; needs clear phasing plan.
+
+  - id: mixed-use-vertical
+    name: "Mixed-Use Vertical (ground-floor retail + residential above)"
+    category: product
+    short_desc: Urban mixed-use; capital-intensive, complex, can deliver marquis project.
+    fit_criteria:
+      - "Walkable urban / town-center context"
+      - "Proven retail demand at site"
+      - "Zoning requires or heavily incentivizes ground-floor commercial"
+      - "Rent/SF >= $2.00"
+    kill_criteria:
+      - "Suburban low-traffic corner"
+      - "No anchor or F&B demand"
+      - "No capital partner comfortable with mixed-use complexity"
+    typical_density: "30-50"
+    typical_product: midrise
+    min_acreage: 1
+    max_acreage: 8
+    rent_floor_psf: 2.00
+    notes: |
+      Consider giving F&B / coffee operator favorable terms with equity retention.
+      Residential usually carries the deal; retail is amenity.
+
+  - id: long-term-hold-reno-ready
+    name: "Long-Term Hold: Designed for Future Renovation"
+    category: product
+    short_desc: Cheaper initial build optimized for Class-A renovation in 10-15 yrs.
+    fit_criteria:
+      - "Long-term hold capital partner OR balance-sheet hold"
+      - "Market where Class-A rents are 20%+ above current achievable"
+      - "Site/product allows future reconfiguration (no load-bearing walls where future opens may happen)"
+    kill_criteria:
+      - "Merchant-build intent (sell within 5-7 yrs)"
+      - "Already-mature Class-A market (no reno upside)"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      Get bones right: windows, ceiling height, soundproofing, MEP flexibility.
+      Cheap out on: cabinets, countertops, light fixtures, landscaping finishes.
+      Pairs with any product-type strategy above.
+
+  # ----- CAPITAL / HOLD STRATEGIES ----------------------------------
+
+  - id: merchant-build-recap-option
+    name: "Merchant Build + Recap Option"
+    category: capital
+    short_desc: Build-to-stabilize-to-sell, but retain optionality to stay in via recap.
+    fit_criteria:
+      - "Strong development spread to market cap"
+      - "JV partner open to recap option"
+      - "Stabilized asset would fit CWP long-term hold portfolio"
+    kill_criteria:
+      - "Capital partner mandates exit"
+      - "Development spread < 100 bps"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      Standard CWP term: recap option on all dev JVs + acq JVs. Stay agnostic
+      to merchant vs long-term hold. Pairs with any product strategy.
+
+  - id: long-term-hold-fee-machine
+    name: "Long-Term Hold / Snowball-to-Fee-Machine"
+    category: capital
+    short_desc: Hold all assets, charge AM fees, grow to PM business optionality.
+    fit_criteria:
+      - "Patient capital partner"
+      - "Asset suits long-hold thesis (infill, barrier-to-entry submarket)"
+    kill_criteria:
+      - "Commodity submarket"
+      - "Capital partner mandates 5-7 yr exit"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      ~75 bps AM fee on 40% equity = ~$1K/unit/yr recurring revenue.
+      At 2,000 units, ~$2M/yr before AM salaries.
+
+  - id: split-predev-vertical-equity
+    name: "Split Pre-Dev HNW + Vertical Programmatic LP"
+    category: capital
+    short_desc: HNW for pre-dev heavy lifting, programmatic LP for teed-up vertical.
+    fit_criteria:
+      - "Pre-dev risk profile tolerable for HNW (Richmond, VA network)"
+      - "Vertical is bankable (entitled, priced, feasibility-complete)"
+    kill_criteria:
+      - "Very large pre-dev check size (> HNW network capacity)"
+      - "Programmatic LP not lined up at vertical handoff"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      Most profitable fundraising strategy per Business Strategy page.
+      Combines cheaper small-check HNW for pre-dev with larger-check LP for vertical.
+
+  - id: jv-land-developer
+    name: "JV with Land Developer (Markel-Eagle / Landeavor style)"
+    category: capital
+    short_desc: Partner with land developer on large sites; they deliver entitled pads.
+    fit_criteria:
+      - "Site > 50 acres OR large master-planned context"
+      - "Land developer has existing relationship"
+      - "Deal sourced through land development channel"
+    kill_criteria:
+      - "Small infill site"
+      - "No land-developer relationship to leverage"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: 40
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      Scalable; less profitable per deal but lower pre-dev risk.
+
+  - id: next-to-aging-comp
+    name: "Next-to-Aging-Comp Reposition"
+    category: execution
+    short_desc: Build new Class-A next to a 10+ yr old comp; capture demographic churn.
+    fit_criteria:
+      - "Submarket has aging Class-A/B with full occupancy"
+      - "Nearby site available at reasonable basis"
+      - "Older comp will not renovate (judged)"
+    kill_criteria:
+      - "Older comp recently renovated / about to"
+      - "Submarket rent-softening"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      See Fundraising & Investing Strategy page: "Build a nice deal with dank
+      amenities next to a ten year old deal."
+
+  # ----- FINANCING-STRUCTURE STRATEGIES -----------------------------
+
+  - id: hud-221-d-4
+    name: "HUD 221(d)(4) Long-Term Hold Financing"
+    category: financing
+    short_desc: 40-yr fixed-rate non-recourse construction-to-perm; suited to long-hold.
+    fit_criteria:
+      - "Long-term hold intent (10+ yrs)"
+      - "Market-rate or mixed-income"
+      - "Sponsor tolerant of HUD timeline (12-18 mo)"
+      - "Davis-Bacon wages acceptable in market"
+    kill_criteria:
+      - "Merchant-build intent"
+      - "Schedule-sensitive start"
+      - "Market where Davis-Bacon adds > 8% to hard costs"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      Non-recourse, 85% LTC, 40-yr amort = strong hold economics.
+
+  - id: lihtc-mixed-income
+    name: "LIHTC / Mixed-Income Tax Credit Deal"
+    category: financing
+    short_desc: 9% or 4% LIHTC; mixed-income or 100% affordable.
+    fit_criteria:
+      - "QCT / DDA location OR state incentive stack"
+      - "Patient equity (15-yr compliance)"
+      - "Team has LIHTC execution experience"
+    kill_criteria:
+      - "Class-A luxury market positioning"
+      - "No LIHTC operating partner"
+      - "Short-hold intent"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      CWP has limited direct LIHTC history; likely requires operating partner.
+
+  - id: opportunity-zone
+    name: "Opportunity Zone Fund Structure"
+    category: financing
+    short_desc: OZ Fund structure; 10-yr hold for tax-free appreciation.
+    fit_criteria:
+      - "Site in designated Opportunity Zone"
+      - "Substantial improvement test can be met"
+      - "10-yr hold intent"
+      - "LPs with embedded cap gains to defer"
+    kill_criteria:
+      - "Site not in OZ"
+      - "Merchant-build intent"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      Stacks with any product strategy. Check: OZ locator + LP pool.
+
+  - id: state-bond-deal
+    name: "State Bond / Agency Deal (VHDA etc.)"
+    category: financing
+    short_desc: State HFA tax-exempt bonds + 4% LIHTC or rate buy-down.
+    fit_criteria:
+      - "In-state agency program available (VHDA in VA, etc.)"
+      - "Mixed-income OR workforce positioning"
+      - "Long-term hold"
+    kill_criteria:
+      - "Pure market-rate luxury"
+      - "Out-of-program state"
+    typical_density: null
+    typical_product: n/a
+    min_acreage: null
+    max_acreage: null
+    rent_floor_psf: null
+    notes: |
+      VHDA is CWP's primary known program; check each state's equivalent.

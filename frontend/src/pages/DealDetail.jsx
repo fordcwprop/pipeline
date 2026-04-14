@@ -297,6 +297,71 @@ function StepSection({ title, icon: Icon, data, stepKey }) {
   )
 }
 
+function StepBlock({ n, title, icon: Icon, children }) {
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl overflow-hidden">
+      <div className="flex items-center gap-3 px-4 py-3 bg-cw-dark/40 border-b border-cw-border">
+        <span className="text-[11px] font-mono text-cw-accent uppercase tracking-wider shrink-0">Step {n}</span>
+        {Icon && <Icon className="w-4 h-4 text-gray-400" />}
+        <h2 className="text-sm font-semibold text-white">{title}</h2>
+      </div>
+      <div className="p-4 space-y-3">{children}</div>
+    </div>
+  )
+}
+
+function FieldGrid({ rows }) {
+  const visible = rows.filter(([, v]) => v !== undefined && v !== null && v !== '')
+  if (!visible.length) return null
+  return (
+    <div className="grid grid-cols-2 gap-y-2 text-sm">
+      {visible.map(([label, val, emphasize]) => (
+        <React.Fragment key={label}>
+          <div className="text-gray-500">{label}</div>
+          <div className={emphasize ? 'font-medium text-cw-accent' : ''}>{val}</div>
+        </React.Fragment>
+      ))}
+    </div>
+  )
+}
+
+function UnitMixTable({ data }) {
+  if (!data) return null
+  let rows
+  try {
+    rows = typeof data === 'string' ? JSON.parse(data) : data
+  } catch { return null }
+  if (!Array.isArray(rows) || rows.length === 0) return null
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+            <th className="py-2 pr-4 font-medium">Type</th>
+            <th className="py-2 pr-4 font-medium">Count</th>
+            <th className="py-2 pr-4 font-medium">Avg SF</th>
+            <th className="py-2 pr-4 font-medium">Avg Rent</th>
+            <th className="py-2 pr-4 font-medium">Rent/SF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-b border-cw-border/50">
+              <td className="py-2 pr-4">{r.type || '—'}</td>
+              <td className="py-2 pr-4">{r.count ?? '—'}</td>
+              <td className="py-2 pr-4">{r.avg_sf ? r.avg_sf.toLocaleString() : '—'}</td>
+              <td className="py-2 pr-4">{r.avg_rent ? `$${r.avg_rent.toLocaleString()}` : '—'}</td>
+              <td className="py-2 pr-4 text-gray-400">
+                {r.avg_sf && r.avg_rent ? `$${(r.avg_rent / r.avg_sf).toFixed(2)}` : '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
 export default function DealDetail({ dealId, onBack }) {
   const [deal, setDeal] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -387,132 +452,200 @@ export default function DealDetail({ dealId, onBack }) {
         </div>
       </Section>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* Property Info */}
+      {/* Summary row: Property · Broker · Timeline */}
+      <div className="grid md:grid-cols-3 gap-6">
         <Section title="Property" icon={Building2}>
-          <div className="grid grid-cols-2 gap-y-2 text-sm">
-            <div className="text-gray-500">Units</div><div>{deal.units || '—'}</div>
-            <div className="text-gray-500">Total SF</div><div>{deal.total_sf ? deal.total_sf.toLocaleString() : '—'}</div>
-            <div className="text-gray-500">Year Built</div><div>{deal.year_built || '—'}</div>
-            <div className="text-gray-500">Type</div><div className="capitalize">{deal.property_type || '—'}</div>
-            <div className="text-gray-500">Deal Type</div><div className="capitalize">{deal.deal_type || '—'}</div>
-          </div>
+          <FieldGrid rows={[
+            ['Units', deal.units],
+            ['Total SF', deal.total_sf ? deal.total_sf.toLocaleString() : null],
+            ['Year Built', deal.year_built],
+            ['Type', deal.property_type && <span className="capitalize">{deal.property_type}</span>],
+            ['Deal Type', deal.deal_type && <span className="capitalize">{deal.deal_type}</span>],
+          ]} />
         </Section>
-
-        {/* Acquisition & Financing */}
-        <Section title="Acquisition & Financing" icon={DollarSign}>
-          <div className="grid grid-cols-2 gap-y-2 text-sm">
-            <div className="text-gray-500">Purchase Price</div><div>{fmtMoney(deal.purchase_price)}</div>
-            <div className="text-gray-500">Closing Costs</div><div>{fmtMoney(deal.closing_costs)}</div>
-            <div className="text-gray-500">Capex Budget</div><div>{fmtMoney(deal.capex_budget)}</div>
-            <div className="text-gray-500">Total Basis</div><div className="font-medium">{fmtMoney(m.total_basis)}</div>
-            <div className="text-gray-500">Loan ({deal.ltv ? `${(deal.ltv * 100).toFixed(0)}%` : '—'} LTV)</div><div>{fmtMoney(m.loan_amount)}</div>
-            <div className="text-gray-500">Equity Required</div><div className="font-medium text-cw-accent">{fmtMoney(m.equity)}</div>
-            <div className="text-gray-500">Interest Rate</div><div>{deal.interest_rate ? `${(deal.interest_rate * 100).toFixed(2)}%` : '—'}</div>
-            <div className="text-gray-500">Amortization</div><div>{deal.amortization_years ? `${deal.amortization_years} years` : '—'}</div>
-            <div className="text-gray-500">IO Period</div><div>{deal.io_period_months ? `${deal.io_period_months} months` : 'None'}</div>
-            <div className="text-gray-500">Annual Debt Service</div><div>{fmtMoney(m.annual_debt_service)}</div>
-          </div>
+        <Section title="Broker" icon={Users}>
+          <FieldGrid rows={[
+            ['Name', deal.broker_name],
+            ['Company', deal.broker_company],
+            ['Email', deal.broker_email],
+            ['Phone', deal.broker_phone],
+          ]} />
         </Section>
-
-        {/* Key Dates */}
         <Section title="Timeline" icon={Calendar}>
-          <div className="grid grid-cols-2 gap-y-2 text-sm">
-            {[
-              ['Listed', deal.date_listed],
-              ['CFO', deal.date_cfo],
-              ['Best & Final', deal.date_best_final],
-              ['LOI Submitted', deal.date_loi_submitted],
-              ['LOI Accepted', deal.date_loi_accepted],
-              ['DD Start', deal.date_dd_start],
-              ['DD End', deal.date_dd_end],
-              ['Closing', deal.date_closing],
-            ].map(([label, val]) => (
-              <React.Fragment key={label}>
-                <div className="text-gray-500">{label}</div>
-                <div>{val || '—'}</div>
-              </React.Fragment>
-            ))}
-          </div>
-        </Section>
-
-        {/* Broker */}
-        <Section title="Broker Info" icon={Building2}>
-          <div className="grid grid-cols-2 gap-y-2 text-sm">
-            <div className="text-gray-500">Name</div><div>{deal.broker_name || '—'}</div>
-            <div className="text-gray-500">Company</div><div>{deal.broker_company || '—'}</div>
-            <div className="text-gray-500">Email</div><div>{deal.broker_email || '—'}</div>
-            <div className="text-gray-500">Phone</div><div>{deal.broker_phone || '—'}</div>
-          </div>
+          <FieldGrid rows={[
+            ['Listed', deal.date_listed],
+            ['CFO', deal.date_cfo],
+            ['Best & Final', deal.date_best_final],
+            ['LOI Submitted', deal.date_loi_submitted],
+            ['LOI Accepted', deal.date_loi_accepted],
+            ['DD Start', deal.date_dd_start],
+            ['DD End', deal.date_dd_end],
+            ['Closing', deal.date_closing],
+          ]} />
         </Section>
       </div>
 
-      {/* Entitlement History */}
-      <EntitlementHistory data={deal.entitlement_data} />
-
-      {/* Dev Agent Step Outputs */}
-      <Section title="Dev Agent Underwriting" icon={FileText}>
-        <div className="space-y-2">
-          <StepSection title="Step 1 · Zoning & Entitlements" icon={Shield}       data={deal.zoning_data}           stepKey="step_1_zoning" />
-          <StepSection title="Step 2 · Site Conditions"        icon={Map}          data={deal.site_data}             stepKey="step_2_site" />
-          <StepSection title="Step 3 · Market & Rent Comps"    icon={LineChart}    data={deal.market_data}           stepKey="step_3_market" />
-          <StepSection title="Step 3.5 · Strategy Screen"      icon={Target}       data={deal.strategy_screen_data}  stepKey="step_3_5_strategy_screen" />
-          <StepSection title="Step 5 · NOI Underwriting"       icon={Calculator}   data={deal.noi_data}              stepKey="step_5_noi" />
-          <StepSection title="Step 6 · Development Costs"      icon={Home}         data={deal.dev_cost_data}         stepKey="step_6_dev_costs" />
-          <StepSection title="Step 7 · Financing"              icon={Landmark}     data={deal.financing_data}        stepKey="step_7_financing" />
-          <StepSection title="Step 8 · Returns & Feasibility"  icon={TrendingUp}   data={deal.returns_data}          stepKey="step_8_returns" />
-          <StepSection title="Step 9 · Strategy & Recommendation" icon={Briefcase} data={deal.strategy_data}         stepKey="step_9_strategy" />
-          {![deal.zoning_data, deal.site_data, deal.market_data, deal.strategy_screen_data, deal.noi_data, deal.dev_cost_data, deal.financing_data, deal.returns_data, deal.strategy_data].some(Boolean) && (
-            <div className="text-sm text-gray-500 italic">No dev-agent step outputs yet. Run the deal through the underwriting workflow to populate these sections.</div>
+      {/* 9-Step Underwriting */}
+      <div className="space-y-4">
+        <StepBlock n="1" title="Zoning & Entitlements" icon={Shield}>
+          <EntitlementHistory data={deal.entitlement_data} />
+          <StepSection title="Zoning output" icon={FileText} data={deal.zoning_data} stepKey="step_1_zoning" />
+          {!deal.entitlement_data && !deal.zoning_data && (
+            <p className="text-sm text-gray-600 italic">No zoning analysis yet.</p>
           )}
-        </div>
-      </Section>
+        </StepBlock>
 
-      {/* Notes */}
-      <Section title="Notes" icon={Edit3}>
-        {editNotes ? (
-          <div>
-            <textarea
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              className="w-full bg-cw-dark border border-cw-border rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-cw-accent focus:outline-none min-h-[120px] resize-y"
-              placeholder="Add deal notes..."
-            />
-            <div className="flex gap-2 mt-2">
-              <button onClick={saveNotes} className="px-3 py-1.5 bg-cw-accent text-white text-sm rounded-lg hover:bg-blue-600">
-                <Save className="w-3 h-3 inline mr-1" /> Save
-              </button>
-              <button onClick={() => { setNotes(deal.notes || ''); setEditNotes(false) }} className="px-3 py-1.5 text-gray-400 text-sm rounded-lg hover:bg-cw-hover">
-                Cancel
-              </button>
+        <StepBlock n="2" title="Site Conditions" icon={Map}>
+          <StepSection title="Site output" icon={FileText} data={deal.site_data} stepKey="step_2_site" />
+          {!deal.site_data && <p className="text-sm text-gray-600 italic">No site analysis yet.</p>}
+        </StepBlock>
+
+        <StepBlock n="3" title="Market & Rent Comps" icon={LineChart}>
+          <StepSection title="Market output" icon={FileText} data={deal.market_data} stepKey="step_3_market" />
+          {!deal.market_data && <p className="text-sm text-gray-600 italic">No market analysis yet.</p>}
+        </StepBlock>
+
+        <StepBlock n="3.5" title="Strategy Screen" icon={Target}>
+          <StepSection title="Strategy screen output" icon={FileText} data={deal.strategy_screen_data} stepKey="step_3_5_strategy_screen" />
+          {!deal.strategy_screen_data && <p className="text-sm text-gray-600 italic">No strategy screen yet.</p>}
+        </StepBlock>
+
+        <StepBlock n="4" title="Unit Mix & Program" icon={Users}>
+          <UnitMixTable data={deal.unit_mix} />
+          {!deal.unit_mix && <p className="text-sm text-gray-600 italic">No unit mix yet.</p>}
+        </StepBlock>
+
+        <StepBlock n="5" title="NOI Underwriting" icon={Calculator}>
+          <div className="grid md:grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Revenue</div>
+              <FieldGrid rows={[
+                ['Gross Potential Rent', fmtMoney(deal.gross_potential_rent)],
+                ['Vacancy Rate', deal.vacancy_rate != null ? fmtPct(deal.vacancy_rate) : null],
+                ['Other Income / Unit', deal.other_income_per_unit ? fmtMoney(deal.other_income_per_unit) : null],
+                ['Concessions / Unit', deal.concessions_per_unit ? fmtMoney(deal.concessions_per_unit) : null],
+              ]} />
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Expenses</div>
+              <FieldGrid rows={[
+                ['Taxes', deal.taxes ? fmtMoney(deal.taxes) : null],
+                ['Insurance', deal.insurance ? fmtMoney(deal.insurance) : null],
+                ['Utilities', deal.utilities ? fmtMoney(deal.utilities) : null],
+                ['Repairs & Maint.', deal.repairs_maintenance ? fmtMoney(deal.repairs_maintenance) : null],
+                ['Mgmt Fee %', deal.management_fee_pct != null ? fmtPct(deal.management_fee_pct) : null],
+                ['Admin', deal.admin ? fmtMoney(deal.admin) : null],
+                ['Payroll', deal.payroll ? fmtMoney(deal.payroll) : null],
+                ['Marketing', deal.marketing ? fmtMoney(deal.marketing) : null],
+                ['Capex Reserve / Unit', deal.capex_reserve_per_unit ? fmtMoney(deal.capex_reserve_per_unit) : null],
+                ['Total Exp Override', deal.total_expenses_override ? fmtMoney(deal.total_expenses_override) : null],
+              ]} />
             </div>
           </div>
-        ) : (
-          <div onClick={() => setEditNotes(true)} className="cursor-pointer hover:bg-cw-dark rounded-lg p-2 -m-2 transition-colors">
-            {deal.notes ? (
-              <p className="text-sm text-gray-300 whitespace-pre-wrap">{deal.notes}</p>
-            ) : (
-              <p className="text-sm text-gray-600 italic">Click to add notes...</p>
-            )}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+            <MetricCard label="NOI" value={fmtMoney(m.noi)} />
+            <MetricCard label="Expense Ratio" value={fmtPct(m.expense_ratio)} />
+            <MetricCard label="NOI / Unit" value={m.noi && deal.units ? fmtMoney(Math.round(m.noi / deal.units)) : '—'} />
+            <MetricCard label="Going-in Cap" value={fmtPct(m.going_in_cap_rate)} />
           </div>
-        )}
-      </Section>
+          <StepSection title="NOI output" icon={FileText} data={deal.noi_data} stepKey="step_5_noi" />
+        </StepBlock>
 
-      {/* Investment Thesis & Risk Factors */}
-      {(deal.investment_thesis || deal.risk_factors || deal.summary) && (
-        <div className="grid md:grid-cols-2 gap-6">
+        <StepBlock n="6" title="Development & Acquisition Costs" icon={Home}>
+          <FieldGrid rows={[
+            ['Purchase Price', fmtMoney(deal.purchase_price)],
+            ['Closing Costs', fmtMoney(deal.closing_costs)],
+            ['Capex Budget', fmtMoney(deal.capex_budget)],
+            ['Total Basis', fmtMoney(m.total_basis), true],
+            ['Price / Unit', fmtMoney(m.price_per_unit)],
+            ['Price / SF', fmtMoney(m.price_per_sf)],
+          ]} />
+          <StepSection title="Dev-cost output" icon={FileText} data={deal.dev_cost_data} stepKey="step_6_dev_costs" />
+        </StepBlock>
+
+        <StepBlock n="7" title="Financing" icon={Landmark}>
+          <FieldGrid rows={[
+            ['LTV', deal.ltv != null ? fmtPct(deal.ltv) : null],
+            ['Loan Amount', fmtMoney(m.loan_amount)],
+            ['Equity Required', fmtMoney(m.equity), true],
+            ['Interest Rate', deal.interest_rate != null ? fmtPct(deal.interest_rate) : null],
+            ['Amortization', deal.amortization_years ? `${deal.amortization_years} years` : null],
+            ['IO Period', deal.io_period_months ? `${deal.io_period_months} months` : 'None'],
+            ['Loan Term', deal.loan_term_years ? `${deal.loan_term_years} years` : null],
+            ['Annual Debt Service', fmtMoney(m.annual_debt_service)],
+            ['DSCR', m.dscr ? `${m.dscr.toFixed(2)}x` : null],
+          ]} />
+          <StepSection title="Financing output" icon={FileText} data={deal.financing_data} stepKey="step_7_financing" />
+        </StepBlock>
+
+        <StepBlock n="8" title="Returns & Feasibility" icon={TrendingUp}>
+          <FieldGrid rows={[
+            ['Exit Cap Rate', deal.exit_cap_rate != null ? fmtPct(deal.exit_cap_rate) : null],
+            ['Sale Costs %', deal.sale_costs_pct != null ? fmtPct(deal.sale_costs_pct) : null],
+            ['Hold Period', deal.hold_period_years ? `${deal.hold_period_years} years` : null],
+          ]} />
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+            <MetricCard label="Yield on Cost" value={fmtPct(m.yield_on_cost)} good={m.yield_on_cost >= 0.065} warn={m.yield_on_cost >= 0.060} />
+            <MetricCard label="Cash-on-Cash" value={fmtPct(m.cash_on_cash)} good={m.cash_on_cash >= 0.06} warn={m.cash_on_cash >= 0.04} />
+            <MetricCard label="Levered IRR" value={fmtPct(m.levered_irr)} good={m.levered_irr >= 0.13} warn={m.levered_irr >= 0.10} />
+            <MetricCard label="Equity Multiple" value={m.equity_multiple ? `${m.equity_multiple.toFixed(2)}x` : '—'} good={m.equity_multiple >= 1.8} warn={m.equity_multiple >= 1.5} />
+          </div>
+          <StepSection title="Returns output" icon={FileText} data={deal.returns_data} stepKey="step_8_returns" />
+        </StepBlock>
+
+        <StepBlock n="9" title="Strategy & Recommendation" icon={Briefcase}>
+          {deal.summary && (
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Summary</div>
+              <p className="text-sm text-gray-300 whitespace-pre-wrap">{deal.summary}</p>
+            </div>
+          )}
           {deal.investment_thesis && (
-            <Section title="Investment Thesis">
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Investment Thesis</div>
               <p className="text-sm text-gray-300 whitespace-pre-wrap">{deal.investment_thesis}</p>
-            </Section>
+            </div>
           )}
           {deal.risk_factors && (
-            <Section title="Risk Factors">
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Risk Factors</div>
               <p className="text-sm text-gray-300 whitespace-pre-wrap">{deal.risk_factors}</p>
-            </Section>
+            </div>
           )}
-        </div>
-      )}
+          <div>
+            <div className="text-xs text-gray-500 uppercase tracking-wide mb-1 flex items-center gap-1">
+              <Edit3 className="w-3 h-3" /> Notes
+            </div>
+            {editNotes ? (
+              <div>
+                <textarea
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  className="w-full bg-cw-dark border border-cw-border rounded-lg p-3 text-sm text-white placeholder-gray-600 focus:border-cw-accent focus:outline-none min-h-[120px] resize-y"
+                  placeholder="Add deal notes..."
+                />
+                <div className="flex gap-2 mt-2">
+                  <button onClick={saveNotes} className="px-3 py-1.5 bg-cw-accent text-white text-sm rounded-lg hover:bg-blue-600">
+                    <Save className="w-3 h-3 inline mr-1" /> Save
+                  </button>
+                  <button onClick={() => { setNotes(deal.notes || ''); setEditNotes(false) }} className="px-3 py-1.5 text-gray-400 text-sm rounded-lg hover:bg-cw-hover">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div onClick={() => setEditNotes(true)} className="cursor-pointer hover:bg-cw-dark rounded-lg p-2 -m-2 transition-colors">
+                {deal.notes ? (
+                  <p className="text-sm text-gray-300 whitespace-pre-wrap">{deal.notes}</p>
+                ) : (
+                  <p className="text-sm text-gray-600 italic">Click to add notes...</p>
+                )}
+              </div>
+            )}
+          </div>
+          <StepSection title="Strategy output" icon={FileText} data={deal.strategy_data} stepKey="step_9_strategy" />
+        </StepBlock>
+      </div>
 
       {/* Activity */}
       {deal.activity && deal.activity.length > 0 && (

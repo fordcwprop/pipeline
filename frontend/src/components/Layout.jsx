@@ -1,11 +1,12 @@
 import React from 'react'
-import { Building2, LayoutDashboard, Kanban, Plus, User, BookOpen } from 'lucide-react'
+import { Building2, LayoutDashboard, Kanban, Plus, User, BookOpen, ClipboardList } from 'lucide-react'
 
 const navItems = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'pipeline', label: 'Pipeline', icon: Kanban },
   { key: 'new-deal', label: 'New Deal', icon: Plus },
   { key: 'strategies', label: 'Strategies', icon: BookOpen },
+  { key: 'underwriting', label: 'Underwriting', icon: ClipboardList },
 ]
 
 export default function Layout({ currentPage, onNavigate, user, children }) {

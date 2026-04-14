@@ -12,7 +12,22 @@ const TYPE_META = {
   unknown:  { label: 'Other',    icon: FileText,             color: 'text-gray-400',  badge: 'bg-gray-400/10 text-gray-400' },
 }
 
-const TYPE_ORDER = ['feedback', 'reference', 'project', 'user']
+const TYPE_ORDER = ['feedback', 'reference', 'project', 'user', 'unknown']
+
+// 9-step underwriting workflow — mirrors deal-analyst orchestrator + deal-state.json sections.
+// Keep this in sync with Dev Agent/skills/deal-analyst/SKILL.md.
+const WORKFLOW_STEPS = [
+  { n: '1',   title: 'Zoning & Entitlements',     skill: 'zoning-analysis',       writes: 'step_1_zoning' },
+  { n: '2',   title: 'Site Conditions',           skill: 'site-analysis',         writes: 'step_2_site' },
+  { n: '3',   title: 'Market & Rent Comps',       skill: 'market-rent-comps',     writes: 'step_3_market' },
+  { n: '3.5', title: 'Strategy Screen',           skill: 'strategy-screen',       writes: 'step_3_5_strategy_screen' },
+  { n: '4',   title: 'Unit Mix & Program',        skill: 'unit-mix-program',      writes: 'step_4_unit_mix' },
+  { n: '5',   title: 'NOI Underwriting',          skill: 'noi-underwriting',      writes: 'step_5_noi' },
+  { n: '6',   title: 'Development Costs',         skill: 'dev-cost-estimate',     writes: 'step_6_dev_costs' },
+  { n: '7',   title: 'Financing Analysis',        skill: 'financing-analysis',    writes: 'step_7_financing' },
+  { n: '8',   title: 'Returns & Feasibility',     skill: 'returns-feasibility',   writes: 'step_8_returns' },
+  { n: '9',   title: 'Strategy & Recommendation', skill: 'strategy-recommendation', writes: 'step_9_strategy' },
+]
 
 function Collapsible({ title, subtitle, icon: Icon, iconColor, badge, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -134,6 +149,40 @@ export default function Underwriting() {
           <span>{memories.length} memory files</span>
         </div>
       </div>
+
+      {/* 9-step workflow map */}
+      <section className="mb-8">
+        <div className="flex items-center gap-2 mb-3">
+          <ClipboardList className="w-4 h-4 text-cw-green" />
+          <h2 className="text-sm font-semibold text-white uppercase tracking-wide">Workflow</h2>
+          <span className="text-xs text-gray-500">deal-analyst orchestrates these in order</span>
+        </div>
+        <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+            {WORKFLOW_STEPS.map((step) => {
+              const hasSkill = skills.some((s) => s.id === step.skill)
+              return (
+                <button
+                  key={step.n}
+                  onClick={() => setQuery(step.skill)}
+                  className="text-left bg-cw-dark border border-cw-border rounded-lg p-3 hover:border-cw-accent transition-colors"
+                  title={`Filter to ${step.skill}`}
+                >
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-cw-accent font-mono text-xs">Step {step.n}</span>
+                    {!hasSkill && (
+                      <span className="text-[10px] text-cw-yellow" title="Skill not found in snapshot">missing</span>
+                    )}
+                  </div>
+                  <div className="text-sm text-white font-medium mt-0.5">{step.title}</div>
+                  <div className="text-[10px] text-gray-500 font-mono mt-1 truncate">{step.skill}</div>
+                  <div className="text-[10px] text-gray-600 font-mono truncate">→ {step.writes}</div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </section>
 
       {/* Search */}
       <div className="relative mb-6">

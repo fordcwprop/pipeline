@@ -50,6 +50,119 @@ function Section({ title, children, icon: Icon }) {
   )
 }
 
+// ────────────────────────────────────────────────────────────────
+// Scenarios (multi-model per deal)
+// ────────────────────────────────────────────────────────────────
+
+function ScenariosTable({ data }) {
+  let scenarios = []
+  try {
+    scenarios = typeof data === 'string' ? JSON.parse(data) : data
+  } catch { return null }
+  if (!Array.isArray(scenarios) || scenarios.length === 0) return null
+
+  const fmtPct = (v) => (v || v === 0) ? `${(v * 100).toFixed(2)}%` : '—'
+  const fmtMoneyM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(2)}M` : '—'
+
+  const summarize = (s) => {
+    const s4 = s.step_4_unit_mix || {}
+    const s6 = s.step_6_dev_costs || {}
+    const s8 = s.step_8_returns || {}
+    const s9 = s.step_9_strategy || {}
+    const units = s4.total_units ?? s.units
+    const tdc = s6.total_dev_cost?.tdc_total ?? s6.tdc_total ?? s6.tdc
+    const yoc = s8.yield_on_cost ?? s8.yoc ?? s6.feasibility_analysis?.implied_yoc_at_tdc
+    const dscr = s8.dscr_amortizing ?? s8.dscr
+    const irr = s8.levered_irr ?? s8.irr_levered
+    const verdict = s9.go_no_go ?? s.verdict ?? s.summary?.slice(0, 60)
+    const product = s4.product_type ?? s.product_type
+    return { units, product, tdc, yoc, dscr, irr, verdict }
+  }
+
+  // Sort: primary first, then non-archived by created_at desc, then archived.
+  const sorted = [...scenarios].sort((a, b) => {
+    if (a.primary && !b.primary) return -1
+    if (b.primary && !a.primary) return 1
+    if (a.archived && !b.archived) return 1
+    if (b.archived && !a.archived) return -1
+    return (b.created_at || '').localeCompare(a.created_at || '')
+  })
+
+  return (
+    <Section title="Scenarios" icon={Target}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+              <th className="py-2 pr-3">Scenario</th>
+              <th className="py-2 pr-3">Units</th>
+              <th className="py-2 pr-3">Product</th>
+              <th className="py-2 pr-3">TDC</th>
+              <th className="py-2 pr-3">YoC</th>
+              <th className="py-2 pr-3">DSCR</th>
+              <th className="py-2 pr-3">IRR</th>
+              <th className="py-2 pr-3">Verdict</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((s, i) => {
+              const summary = summarize(s)
+              const rowClass = s.primary
+                ? 'bg-emerald-500/5 border-b border-cw-border'
+                : s.archived
+                ? 'opacity-60 border-b border-cw-border'
+                : 'border-b border-cw-border'
+              return (
+                <tr key={s.id || i} className={rowClass}>
+                  <td className="py-2 pr-3">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{s.name || s.id || `Scenario ${i + 1}`}</span>
+                      {s.primary && <span className="text-[10px] uppercase tracking-wide bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">Primary</span>}
+                      {s.archived && !s.primary && <span className="text-[10px] uppercase tracking-wide bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded">Archived</span>}
+                    </div>
+                    {s.created_at && <div className="text-xs text-gray-500 mt-0.5">{s.created_at}</div>}
+                  </td>
+                  <td className="py-2 pr-3">{summary.units ?? '—'}</td>
+                  <td className="py-2 pr-3 text-gray-300">{summary.product || '—'}</td>
+                  <td className="py-2 pr-3">{fmtMoneyM(summary.tdc)}</td>
+                  <td className="py-2 pr-3">{fmtPct(summary.yoc)}</td>
+                  <td className="py-2 pr-3">{summary.dscr ? `${Number(summary.dscr).toFixed(2)}x` : '—'}</td>
+                  <td className="py-2 pr-3">{fmtPct(summary.irr)}</td>
+                  <td className="py-2 pr-3 text-xs text-gray-400">{summary.verdict || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="text-xs text-gray-500 mt-3">
+        Key Metrics above reflect the <span className="text-emerald-400">primary</span> scenario.
+      </div>
+    </Section>
+  )
+}
+
+function NarrativeSection({ title, icon, text, placeholder }) {
+  if (!text || !text.trim()) {
+    return (
+      <Section title={title} icon={icon}>
+        <div className="text-sm text-gray-500 italic">{placeholder}</div>
+      </Section>
+    )
+  }
+  // Simple markdown-ish rendering: split paragraphs, preserve line breaks.
+  const blocks = text.split(/\n{2,}/)
+  return (
+    <Section title={title} icon={icon}>
+      <div className="space-y-3 text-sm text-gray-200 leading-relaxed">
+        {blocks.map((b, i) => (
+          <p key={i} className="whitespace-pre-wrap">{b}</p>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 function RiskLevelBadge({ level }) {
   const config = {
     low: { bg: 'bg-green-900/40', text: 'text-green-400', border: 'border-green-700', label: 'LOW' },
@@ -451,6 +564,27 @@ export default function DealDetail({ dealId, onBack }) {
           <MetricCard label="Expense Ratio" value={fmtPct(m.expense_ratio)} />
         </div>
       </Section>
+
+      {/* Scenarios (past & current models) */}
+      {deal.scenarios_data && <ScenariosTable data={deal.scenarios_data} />}
+
+      {/* Base Case + Path to Better narrative */}
+      {(deal.base_case_summary || deal.upside_path) && (
+        <div className="grid md:grid-cols-2 gap-6">
+          <NarrativeSection
+            title="Base Case"
+            icon={Landmark}
+            text={deal.base_case_summary}
+            placeholder="No base case narrative yet — what is the site, what is it zoned/planned for, what does a by-right build-out look like?"
+          />
+          <NarrativeSection
+            title="Path to Better"
+            icon={Target}
+            text={deal.upside_path}
+            placeholder="No upside path yet — what has to change (density, product mix, rent, cost) to get this deal to pencil, and what has to be true for it to work?"
+          />
+        </div>
+      )}
 
       {/* Summary row: Property · Broker · Timeline */}
       <div className="grid md:grid-cols-3 gap-6">

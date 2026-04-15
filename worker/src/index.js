@@ -1,5 +1,4 @@
 /**
-// deploy: 1776195940
  * CW Properties Pipeline API Worker
  * Cloudflare Worker with D1 database for deal pipeline management
  */
@@ -24,6 +23,7 @@ const JSON_BLOB_FIELDS = new Set([
   'financing_data',
   'returns_data',
   'strategy_data',
+  'scenarios_data',
 ]);
 
 // ────────────────────────────────────────────────────────────────
@@ -321,7 +321,9 @@ async function handleCreateDeal(request, env) {
     // sections from fordcwprop/dev-agent. Worker serializes objects to
     // JSON strings at write time; frontend parses them at read time.
     'zoning_data', 'site_data', 'market_data', 'strategy_screen_data',
-    'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data'
+    'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
+    // Scenarios (multi-model per deal) + narrative fields
+    'scenarios_data', 'base_case_summary', 'upside_path'
   ];
 
   const setCols = ['id'];
@@ -380,7 +382,9 @@ async function handleUpdateDeal(request, env, dealId) {
     // sections from fordcwprop/dev-agent. Worker serializes objects to
     // JSON strings at write time; frontend parses them at read time.
     'zoning_data', 'site_data', 'market_data', 'strategy_screen_data',
-    'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data'
+    'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
+    // Scenarios (multi-model per deal) + narrative fields
+    'scenarios_data', 'base_case_summary', 'upside_path'
   ];
 
   const sets = [];

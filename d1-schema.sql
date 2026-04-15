@@ -80,6 +80,16 @@ CREATE TABLE IF NOT EXISTS deals (
     returns_data TEXT,         -- step_8_returns
     strategy_data TEXT,        -- step_9_strategy
 
+    -- Multi-scenario underwriting. scenarios_data is a JSON array of every
+    -- scenario modeled for this deal; each scenario carries its own
+    -- step_4..step_9 snapshot + metadata. The "primary" scenario's step
+    -- outputs are mirrored to the scalar columns above so calculateMetrics
+    -- reflects the current best case. base_case_summary and upside_path
+    -- are free-form markdown narrative.
+    scenarios_data TEXT,
+    base_case_summary TEXT,
+    upside_path TEXT,
+
     -- Key dates
     date_listed TEXT,
     date_cfo TEXT,

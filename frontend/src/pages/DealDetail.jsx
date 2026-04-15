@@ -51,10 +51,346 @@ function Section({ title, children, icon: Icon }) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// Helpers: safe JSON parse, citation rendering, sources list
+// ────────────────────────────────────────────────────────────────
+
+function parseMaybeJSON(v) {
+  if (v == null) return null
+  if (typeof v !== 'string') return v
+  try { return JSON.parse(v) } catch { return null }
+}
+
+// Render text containing [^sourceid] markers as inline numbered chips that
+// hyperlink to the matching source in `sources`. Unknown ids render as the
+// raw marker so they're visible as a bug.
+function CitedText({ text, sources }) {
+  if (!text) return null
+  const srcArr = Array.isArray(sources) ? sources : (parseMaybeJSON(sources) || [])
+  const idToIdx = {}
+  srcArr.forEach((s, i) => { if (s && s.id) idToIdx[s.id] = i + 1 })
+
+  const renderBlock = (block, key) => {
+    const parts = []
+    const re = /\[\^([a-zA-Z0-9_\-.]+)\]/g
+    let last = 0
+    let m
+    let j = 0
+    while ((m = re.exec(block)) !== null) {
+      if (m.index > last) parts.push(block.slice(last, m.index))
+      const id = m[1]
+      const num = idToIdx[id]
+      const src = srcArr.find(s => s && s.id === id)
+      if (num && src) {
+        parts.push(
+          <a
+            key={`c${key}-${j++}`}
+            href={src.url || '#'}
+            target={src.url ? '_blank' : undefined}
+            rel="noopener noreferrer"
+            title={src.label ? `${src.label}${src.note ? ' — ' + src.note : ''}` : id}
+            className="inline-flex items-center justify-center align-super text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 hover:text-emerald-200 rounded px-1 ml-0.5 no-underline"
+          >
+            {num}
+          </a>
+        )
+      } else {
+        parts.push(<span key={`c${key}-${j++}`} className="text-red-400">[^{id}]</span>)
+      }
+      last = re.lastIndex
+    }
+    if (last < block.length) parts.push(block.slice(last))
+    return parts
+  }
+
+  const blocks = String(text).split(/\n{2,}/)
+  return (
+    <>
+      {blocks.map((b, i) => (
+        <p key={i} className="whitespace-pre-wrap">{renderBlock(b, i)}</p>
+      ))}
+    </>
+  )
+}
+
+function SourcesList({ sources }) {
+  const arr = Array.isArray(sources) ? sources : (parseMaybeJSON(sources) || [])
+  if (!arr.length) return null
+  return (
+    <Section title="Primary Sources" icon={FileText}>
+      <ol className="space-y-2 text-sm">
+        {arr.map((s, i) => (
+          <li key={s.id || i} className="flex gap-3">
+            <span className="inline-flex items-center justify-center shrink-0 w-6 h-6 text-[11px] font-semibold bg-emerald-500/20 text-emerald-300 rounded">
+              {i + 1}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-gray-200">
+                {s.url ? (
+                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="hover:text-emerald-300 underline decoration-gray-700 hover:decoration-emerald-500">
+                    {s.label || s.url}
+                  </a>
+                ) : (
+                  <span>{s.label || s.id}</span>
+                )}
+              </div>
+              {s.note && <div className="text-xs text-gray-500 mt-0.5">{s.note}</div>}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </Section>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
+// Scenario Detail Drawer — click a scenario row to see inputs
+// ────────────────────────────────────────────────────────────────
+
+function MetricBox({ label, value, sub }) {
+  return (
+    <div className="bg-cw-dark rounded-lg p-3">
+      <div className="text-[11px] text-gray-500 mb-1 uppercase tracking-wide">{label}</div>
+      <div className="text-base font-bold text-white">{value}</div>
+      {sub && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+    </div>
+  )
+}
+
+function KVTable({ rows }) {
+  const cleaned = rows.filter(r => r[1] !== null && r[1] !== undefined && r[1] !== '')
+  if (!cleaned.length) return <div className="text-xs text-gray-500 italic">No data.</div>
+  return (
+    <div className="divide-y divide-cw-border">
+      {cleaned.map(([k, v], i) => (
+        <div key={i} className="flex justify-between py-1.5 text-sm">
+          <span className="text-gray-400">{k}</span>
+          <span className="text-gray-200 text-right">{v}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function ScenarioDetailDrawer({ scenario, sources, onClose }) {
+  if (!scenario) return null
+  const s4 = scenario.step_4_unit_mix || {}
+  const s5 = scenario.step_5_noi || {}
+  const s6 = scenario.step_6_dev_costs || {}
+  const s7 = scenario.step_7_financing || {}
+  const s8 = scenario.step_8_returns || {}
+  const s9 = scenario.step_9_strategy || {}
+
+  const fmtPct = (v) => (v || v === 0) ? `${(v * 100).toFixed(2)}%` : '—'
+  const fmtMoneyM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(2)}M` : '—'
+  const fmtMoney = (v) => (v || v === 0) ? `$${Math.round(v).toLocaleString()}` : '—'
+  const fmtX = (v) => (v || v === 0) ? `${Number(v).toFixed(2)}x` : '—'
+
+  const units = s4.total_units
+  const tdc = s6.total_dev_cost?.tdc_total ?? s6.tdc_total ?? s6.tdc
+  const yoc = s8.yield_on_cost ?? s8.yoc ?? s6.feasibility_analysis?.implied_yoc_at_tdc
+  const dscr = s8.dscr_amortizing ?? s8.dscr
+  const irr = s8.levered_irr ?? s8.irr_levered
+  const em = s8.equity_multiple
+  const devSpread = s8.development_spread_bps
+
+  const unitMixRows = Array.isArray(s4.unit_mix) ? s4.unit_mix
+    : Array.isArray(s4.units_by_type) ? s4.units_by_type
+    : Array.isArray(s4.mix) ? s4.mix : []
+
+  const docs = scenario.source_documents || scenario.docs || []
+
+  const onBackdrop = (e) => { if (e.target === e.currentTarget) onClose() }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex justify-end" onClick={onBackdrop}>
+      <div className="w-full max-w-3xl h-full overflow-y-auto bg-cw-bg border-l border-cw-border shadow-2xl">
+        {/* Header */}
+        <div className="sticky top-0 bg-cw-bg border-b border-cw-border px-6 py-4 flex items-start justify-between z-10">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-white">{scenario.name || scenario.id}</h2>
+              {scenario.primary && <span className="text-[10px] uppercase tracking-wide bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">Primary</span>}
+              {scenario.archived && <span className="text-[10px] uppercase tracking-wide bg-gray-500/20 text-gray-400 px-1.5 py-0.5 rounded">Archived</span>}
+            </div>
+            {scenario.summary && <div className="text-sm text-gray-400 mt-1">{scenario.summary}</div>}
+            <div className="text-xs text-gray-500 mt-1">
+              {scenario.product_type} · {scenario.created_at}
+            </div>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl leading-none">×</button>
+        </div>
+
+        <div className="p-6 space-y-5">
+          {/* Headline metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <MetricBox label="Units" value={units ?? '—'} sub={scenario.product_type} />
+            <MetricBox label="TDC" value={fmtMoneyM(tdc)} sub={units ? `${fmtMoney(tdc / units)}/unit` : null} />
+            <MetricBox label="YoC" value={fmtPct(yoc)} sub={s8.target_yoc ? `Target ${fmtPct(s8.target_yoc)}` : null} />
+            <MetricBox label="DSCR" value={fmtX(dscr)} />
+            <MetricBox label="Levered IRR" value={fmtPct(irr)} />
+            <MetricBox label="Equity Multiple" value={fmtX(em)} sub={devSpread != null ? `Dev spread ${devSpread > 0 ? '+' : ''}${devSpread}bps` : null} />
+          </div>
+
+          {/* Unit Mix */}
+          <Section title="Unit Mix" icon={Home}>
+            {unitMixRows.length > 0 ? (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+                    <th className="py-1.5 pr-3">Type</th>
+                    <th className="py-1.5 pr-3">Count</th>
+                    <th className="py-1.5 pr-3">Avg SF</th>
+                    <th className="py-1.5 pr-3">Avg Rent</th>
+                    <th className="py-1.5 pr-3">Rent/SF</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unitMixRows.map((u, i) => {
+                    const t = u.type || u.unit_type || u.name
+                    const ct = u.count ?? u.units
+                    const sf = u.avg_sf ?? u.sf
+                    const rent = u.avg_rent ?? u.rent
+                    const rpsf = rent && sf ? (rent / sf).toFixed(2) : null
+                    return (
+                      <tr key={i} className="border-b border-cw-border/50">
+                        <td className="py-1.5 pr-3 text-gray-200">{t}</td>
+                        <td className="py-1.5 pr-3">{ct}</td>
+                        <td className="py-1.5 pr-3">{sf ? sf.toLocaleString() : '—'}</td>
+                        <td className="py-1.5 pr-3">{rent ? `$${Math.round(rent).toLocaleString()}` : '—'}</td>
+                        <td className="py-1.5 pr-3 text-gray-400">{rpsf ? `$${rpsf}` : '—'}</td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            ) : (
+              <div className="text-xs text-gray-500 italic">No unit mix recorded.</div>
+            )}
+            <div className="text-xs text-gray-500 mt-2">
+              {s4.total_units && <>Total units: <span className="text-gray-300">{s4.total_units}</span></>}
+              {s4.gross_potential_rent && <> · GPR: <span className="text-gray-300">{fmtMoneyM(s4.gross_potential_rent)}</span></>}
+              {s4.avg_rent_per_unit && <> · Avg rent: <span className="text-gray-300">${Math.round(s4.avg_rent_per_unit).toLocaleString()}/u</span></>}
+            </div>
+          </Section>
+
+          {/* NOI */}
+          <Section title="NOI Underwriting" icon={Calculator}>
+            <KVTable rows={[
+              ['Gross Potential Rent', fmtMoneyM(s5.gpr ?? s5.gross_potential_rent)],
+              ['Vacancy / Credit Loss', fmtPct(s5.vacancy_rate ?? s5.vacancy)],
+              ['Other Income', fmtMoneyM(s5.other_income)],
+              ['Effective Gross Income', fmtMoneyM(s5.egi ?? s5.effective_gross_income)],
+              ['Total Operating Expenses', fmtMoneyM(s5.total_opex ?? s5.operating_expenses)],
+              ['Opex / unit', s5.opex_per_unit ? fmtMoney(s5.opex_per_unit) : null],
+              ['Expense Ratio', fmtPct(s5.expense_ratio)],
+              ['Stabilized NOI', <span className="font-semibold text-emerald-300">{fmtMoneyM(s5.noi ?? s5.stabilized_noi)}</span>],
+            ]} />
+          </Section>
+
+          {/* Dev costs */}
+          <Section title="Development Budget" icon={Building2}>
+            <KVTable rows={[
+              ['Land', fmtMoneyM(s6.land?.total ?? s6.land_cost)],
+              ['Hard Costs', fmtMoneyM(s6.hard_costs?.total ?? s6.hard_costs)],
+              ['Soft Costs', fmtMoneyM(s6.soft_costs?.total ?? s6.soft_costs)],
+              ['Contingency', fmtMoneyM(s6.contingency?.total ?? s6.contingency)],
+              ['Financing Costs', fmtMoneyM(s6.financing_costs?.total ?? s6.financing_costs)],
+              ['Total Dev Cost', <span className="font-semibold text-emerald-300">{fmtMoneyM(tdc)}</span>],
+              ['TDC / unit', units && tdc ? fmtMoney(tdc / units) : null],
+            ]} />
+          </Section>
+
+          {/* Financing */}
+          <Section title="Financing" icon={Landmark}>
+            <KVTable rows={[
+              ['Program', s7.selected_program ?? s7.program ?? s7.path],
+              ['LTC', fmtPct(s7.ltc)],
+              ['LTV', fmtPct(s7.ltv)],
+              ['Loan Amount', fmtMoneyM(s7.loan_amount)],
+              ['Rate', fmtPct(s7.rate ?? s7.interest_rate)],
+              ['Amortization', s7.amortization_years ? `${s7.amortization_years} yrs` : null],
+              ['Annual Debt Service', fmtMoneyM(s7.annual_debt_service ?? s7.debt_service)],
+              ['Equity Required', fmtMoneyM(s7.equity_required ?? s7.equity)],
+            ]} />
+          </Section>
+
+          {/* Step 9 Strategy */}
+          {(s9.highest_best_use || s9.recommendation_summary || s9.go_no_go) && (
+            <Section title="Strategy & Recommendation" icon={Target}>
+              <div className="space-y-3 text-sm text-gray-200 leading-relaxed">
+                {s9.go_no_go && (
+                  <div className="text-xs uppercase tracking-wide">
+                    <span className="text-gray-500">Verdict: </span>
+                    <span className="text-emerald-300 font-semibold">{s9.go_no_go}</span>
+                  </div>
+                )}
+                {s9.highest_best_use && (
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Highest & Best Use</div>
+                    <CitedText text={s9.highest_best_use} sources={sources} />
+                  </div>
+                )}
+                {s9.recommendation_summary && (
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Summary</div>
+                    <CitedText text={s9.recommendation_summary} sources={sources} />
+                  </div>
+                )}
+                {Array.isArray(s9.top_risks) && s9.top_risks.length > 0 && (
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Top Risks</div>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {s9.top_risks.map((r, i) => (
+                        <li key={i}><CitedText text={typeof r === 'string' ? r : (r.risk || r.text || JSON.stringify(r))} sources={sources} /></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {Array.isArray(s9.competitive_advantages) && s9.competitive_advantages.length > 0 && (
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Competitive Advantages</div>
+                    <ul className="list-disc pl-5 space-y-1">
+                      {s9.competitive_advantages.map((c, i) => (
+                        <li key={i}><CitedText text={typeof c === 'string' ? c : (c.advantage || c.text || JSON.stringify(c))} sources={sources} /></li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* Source documents (e.g. Excel models) */}
+          {docs.length > 0 && (
+            <Section title="Model Documents" icon={FileText}>
+              <ul className="space-y-2 text-sm">
+                {docs.map((d, i) => (
+                  <li key={i}>
+                    {d.url ? (
+                      <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-emerald-300 hover:text-emerald-200 underline">
+                        {d.label || d.url}
+                      </a>
+                    ) : (
+                      <span className="text-gray-300">{d.label || d.path}</span>
+                    )}
+                    {d.note && <span className="text-xs text-gray-500 ml-2">— {d.note}</span>}
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
 // Scenarios (multi-model per deal)
 // ────────────────────────────────────────────────────────────────
 
-function ScenariosTable({ data }) {
+function ScenariosTable({ data, sources }) {
+  const [open, setOpen] = useState(null)
   let scenarios = []
   try {
     scenarios = typeof data === 'string' ? JSON.parse(data) : data
@@ -107,13 +443,14 @@ function ScenariosTable({ data }) {
           <tbody>
             {sorted.map((s, i) => {
               const summary = summarize(s)
+              const base = 'border-b border-cw-border cursor-pointer hover:bg-cw-dark/70 transition-colors'
               const rowClass = s.primary
-                ? 'bg-emerald-500/5 border-b border-cw-border'
+                ? `bg-emerald-500/5 ${base}`
                 : s.archived
-                ? 'opacity-60 border-b border-cw-border'
-                : 'border-b border-cw-border'
+                ? `opacity-60 ${base}`
+                : base
               return (
-                <tr key={s.id || i} className={rowClass}>
+                <tr key={s.id || i} className={rowClass} onClick={() => setOpen(s)}>
                   <td className="py-2 pr-3">
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{s.name || s.id || `Scenario ${i + 1}`}</span>
@@ -136,13 +473,14 @@ function ScenariosTable({ data }) {
         </table>
       </div>
       <div className="text-xs text-gray-500 mt-3">
-        Key Metrics above reflect the <span className="text-emerald-400">primary</span> scenario.
+        Key Metrics above reflect the <span className="text-emerald-400">primary</span> scenario. Click a row to see unit mix, NOI, dev budget, financing, and strategy details.
       </div>
+      {open && <ScenarioDetailDrawer scenario={open} sources={sources} onClose={() => setOpen(null)} />}
     </Section>
   )
 }
 
-function NarrativeSection({ title, icon, text, placeholder }) {
+function NarrativeSection({ title, icon, text, placeholder, sources }) {
   if (!text || !text.trim()) {
     return (
       <Section title={title} icon={icon}>
@@ -150,14 +488,10 @@ function NarrativeSection({ title, icon, text, placeholder }) {
       </Section>
     )
   }
-  // Simple markdown-ish rendering: split paragraphs, preserve line breaks.
-  const blocks = text.split(/\n{2,}/)
   return (
     <Section title={title} icon={icon}>
       <div className="space-y-3 text-sm text-gray-200 leading-relaxed">
-        {blocks.map((b, i) => (
-          <p key={i} className="whitespace-pre-wrap">{b}</p>
-        ))}
+        <CitedText text={text} sources={sources} />
       </div>
     </Section>
   )
@@ -566,7 +900,7 @@ export default function DealDetail({ dealId, onBack }) {
       </Section>
 
       {/* Scenarios (past & current models) */}
-      {deal.scenarios_data && <ScenariosTable data={deal.scenarios_data} />}
+      {deal.scenarios_data && <ScenariosTable data={deal.scenarios_data} sources={deal.sources_data} />}
 
       {/* Base Case + Path to Better narrative */}
       {(deal.base_case_summary || deal.upside_path) && (
@@ -575,16 +909,21 @@ export default function DealDetail({ dealId, onBack }) {
             title="Base Case"
             icon={Landmark}
             text={deal.base_case_summary}
+            sources={deal.sources_data}
             placeholder="No base case narrative yet — what is the site, what is it zoned/planned for, what does a by-right build-out look like?"
           />
           <NarrativeSection
             title="Path to Better"
             icon={Target}
             text={deal.upside_path}
+            sources={deal.sources_data}
             placeholder="No upside path yet — what has to change (density, product mix, rent, cost) to get this deal to pencil, and what has to be true for it to work?"
           />
         </div>
       )}
+
+      {/* Primary sources referenced from narrative */}
+      {deal.sources_data && <SourcesList sources={deal.sources_data} />}
 
       {/* Summary row: Property · Broker · Timeline */}
       <div className="grid md:grid-cols-3 gap-6">

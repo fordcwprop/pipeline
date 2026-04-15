@@ -24,6 +24,7 @@ const JSON_BLOB_FIELDS = new Set([
   'returns_data',
   'strategy_data',
   'scenarios_data',
+  'sources_data',
 ]);
 
 // ────────────────────────────────────────────────────────────────
@@ -323,7 +324,7 @@ async function handleCreateDeal(request, env) {
     'zoning_data', 'site_data', 'market_data', 'strategy_screen_data',
     'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
     // Scenarios (multi-model per deal) + narrative fields
-    'scenarios_data', 'base_case_summary', 'upside_path'
+    'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data'
   ];
 
   const setCols = ['id'];
@@ -384,7 +385,7 @@ async function handleUpdateDeal(request, env, dealId) {
     'zoning_data', 'site_data', 'market_data', 'strategy_screen_data',
     'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
     // Scenarios (multi-model per deal) + narrative fields
-    'scenarios_data', 'base_case_summary', 'upside_path'
+    'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data'
   ];
 
   const sets = [];

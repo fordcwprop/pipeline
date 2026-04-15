@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS deals (
     scenarios_data TEXT,
     base_case_summary TEXT,
     upside_path TEXT,
+    sources_data TEXT,  -- JSON array of {id, label, url, note} primary sources
+                        -- referenced from narrative text via [^sourceid] markers
 
     -- Key dates
     date_listed TEXT,

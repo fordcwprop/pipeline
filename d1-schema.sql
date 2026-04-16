@@ -92,6 +92,11 @@ CREATE TABLE IF NOT EXISTS deals (
     sources_data TEXT,  -- JSON array of {id, label, url, note} primary sources
                         -- referenced from narrative text via [^sourceid] markers
 
+    -- Hybrid acq+dev deals carry a versioned phase_context.v1 JSON blob:
+    -- { hybrid, schema, phase_1:{...}, phase_2:{...}, combined:{...} }
+    -- NULL for canonical deals. Rendered by PhaseBreakdownCard.
+    phase_context TEXT,
+
     -- Key dates
     date_listed TEXT,
     date_cfo TEXT,

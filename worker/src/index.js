@@ -25,6 +25,7 @@ const JSON_BLOB_FIELDS = new Set([
   'strategy_data',
   'scenarios_data',
   'sources_data',
+  'phase_context',
 ]);
 
 // ────────────────────────────────────────────────────────────────
@@ -324,7 +325,9 @@ async function handleCreateDeal(request, env) {
     'zoning_data', 'site_data', 'market_data', 'strategy_screen_data',
     'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
     // Scenarios (multi-model per deal) + narrative fields
-    'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data'
+    'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',
+    // Hybrid acq+dev phase breakdown (see migrations/004_phase_context.sql)
+    'phase_context'
   ];
 
   const setCols = ['id'];
@@ -385,7 +388,9 @@ async function handleUpdateDeal(request, env, dealId) {
     'zoning_data', 'site_data', 'market_data', 'strategy_screen_data',
     'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
     // Scenarios (multi-model per deal) + narrative fields
-    'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data'
+    'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',
+    // Hybrid acq+dev phase breakdown (see migrations/004_phase_context.sql)
+    'phase_context'
   ];
 
   const sets = [];

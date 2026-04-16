@@ -38,6 +38,135 @@ function RiskBadge({ risk }) {
   )
 }
 
+// Hybrid acq+dev deals (e.g., Theo Allen Gateway: 270-unit mid-rise Phase 1
+// in lease-up + 27.2 ac of entitled land for Phase 2 + residual lots) can't
+// be flattened into a single step_4-9 snapshot. The dev-agent sync-pipeline
+// skill detects them by the presence of phase1/phase2_revised top-level keys
+// on deal-state.json and writes a phase_context blob. This component renders
+// it as a two-column P1 vs P2 breakdown above Key Metrics. Returns null for
+// non-hybrid deals so the page layout is unchanged.
+function PhaseBreakdownCard({ data }) {
+  if (!data) return null
+  const pc = typeof data === 'string' ? (() => { try { return JSON.parse(data) } catch { return null } })() : data
+  if (!pc || !pc.hybrid) return null
+
+  const p1 = pc.phase_1 || {}
+  const p2 = pc.phase_2 || {}
+  const c = pc.combined || {}
+
+  const fmtM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(1)}M` : '—'
+  const fmtN = (v) => (v || v === 0) ? v.toLocaleString() : '—'
+  const fmtPct = (v) => (v || v === 0) ? `${(v * 100).toFixed(2)}%` : '—'
+  const fmtRange = (r) => (Array.isArray(r) && r.length === 2) ? `$${(r[0]/1e6).toFixed(1)}M – $${(r[1]/1e6).toFixed(1)}M` : '—'
+
+  const Field = ({ label, value, span = 1 }) => (
+    <div className={span === 2 ? 'col-span-2' : ''}>
+      <div className="text-xs text-gray-500">{label}</div>
+      <div className="font-semibold text-sm">{value}</div>
+    </div>
+  )
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Building2 className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Phase Breakdown</h3>
+        <span className="text-xs px-2 py-0.5 rounded bg-indigo-900/40 text-indigo-300 ml-auto">hybrid acq + dev</span>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Phase 1 — Acquisition */}
+        <div className="bg-cw-dark rounded-lg p-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="text-sm font-semibold text-white">{p1.label || 'Phase 1 — Acquisition'}</div>
+            {p1.stage && <span className="text-xs px-2 py-0.5 rounded bg-blue-900/40 text-blue-300">{p1.stage}</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-y-2 gap-x-3">
+            <Field label="Units" value={fmtN(p1.units)} />
+            <Field label="Rentable SF" value={fmtN(p1.rentable_sf)} />
+            <Field label="Occupancy" value={p1.occupancy_pct != null ? `${p1.occupancy_pct}%` : '—'} />
+            <Field label="In-Place GPR" value={fmtM(p1.in_place_gpr)} />
+            <Field label="FY1 NOI" value={fmtM(p1.fy1_noi)} />
+            <Field label="Stabilized NOI" value={fmtM(p1.stabilized_noi)} />
+            <Field label="Basis Range" value={fmtRange(p1.basis_range)} span={2} />
+            {p1.basis_mid != null && <Field label="Basis Mid" value={fmtM(p1.basis_mid)} span={2} />}
+          </div>
+          {p1.financing && (
+            <div className="mt-3 pt-3 border-t border-cw-border">
+              <div className="text-xs text-gray-500 mb-1">Financing — {p1.financing.product || 'TBD'}</div>
+              <div className="text-sm">
+                LTV <span className="font-semibold">{fmtPct(p1.financing.ltv)}</span>
+                {' · '}Rate <span className="font-semibold">{fmtPct(p1.financing.rate)}</span>
+                {p1.financing.term_yrs && <> · <span className="font-semibold">{p1.financing.term_yrs}yr</span></>}
+                {p1.financing.io_years && <> · IO <span className="font-semibold">{p1.financing.io_years}yr</span></>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Phase 2 — Development */}
+        <div className="bg-cw-dark rounded-lg p-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="text-sm font-semibold text-white">{p2.label || 'Phase 2 — Development'}</div>
+            <span className="text-xs px-2 py-0.5 rounded bg-purple-900/40 text-purple-300">development</span>
+          </div>
+          <div className="grid grid-cols-2 gap-y-2 gap-x-3">
+            <Field label="Approved Units" value={fmtN(p2.approved_units)} />
+            <Field label="Approved Ac" value={p2.approved_ac != null ? p2.approved_ac : '—'} />
+            <Field label="Approved Product" value={p2.approved_product || '—'} span={2} />
+            <Field label="Residual Ac" value={p2.residual_ac != null ? p2.residual_ac : '—'} />
+            <Field label="Residual Unit Cap" value={fmtN(p2.residual_capacity_units)} />
+            <Field label="Land Basis" value={fmtRange(p2.land_basis_range)} span={2} />
+            {p2.residual_lots_range && <Field label="Residual Lots" value={fmtRange(p2.residual_lots_range)} span={2} />}
+            {Array.isArray(p2.hard_cost_psf_range) && p2.hard_cost_psf_range.length === 2 && (
+              <Field label="Hard Cost Market" value={`$${p2.hard_cost_psf_range[0]}–$${p2.hard_cost_psf_range[1]}/SF`} span={2} />
+            )}
+          </div>
+          {p2.financing && (
+            <div className="mt-3 pt-3 border-t border-cw-border">
+              <div className="text-xs text-gray-500 mb-1">Financing</div>
+              <div className="text-sm">
+                Constr LTC <span className="font-semibold">{fmtPct(p2.financing.construction_ltc)}</span>
+                {' @ '}<span className="font-semibold">{fmtPct(p2.financing.construction_rate)}</span>
+              </div>
+              <div className="text-sm">
+                Perm LTV <span className="font-semibold">{fmtPct(p2.financing.perm_ltv)}</span>
+                {' @ '}<span className="font-semibold">{fmtPct(p2.financing.perm_rate)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Combined */}
+      {(c.combined_mid || c.total_basis_range || c.walk_above || c.bottom_line || c.opening_bid) && (
+        <div className="mt-4 bg-cw-dark rounded-lg p-4">
+          <div className="text-sm font-semibold text-white mb-2">Combined</div>
+          <div className="grid md:grid-cols-3 gap-3">
+            {c.total_basis_range && <Field label="Total Basis Range" value={fmtRange(c.total_basis_range)} />}
+            {c.combined_mid != null && <Field label="Combined Mid" value={fmtM(c.combined_mid)} />}
+            {c.walk_above != null && (
+              <div>
+                <div className="text-xs text-gray-500">Walk Above</div>
+                <div className="font-semibold text-sm text-cw-red">{fmtM(c.walk_above)}</div>
+              </div>
+            )}
+          </div>
+          {c.opening_bid && (
+            <div className="mt-3 text-sm">
+              <span className="text-xs text-gray-500">Opening Bid: </span>
+              {c.opening_bid}
+            </div>
+          )}
+          {c.bottom_line && (
+            <div className="mt-2 text-sm text-gray-300 italic">{c.bottom_line}</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Section({ title, children, icon: Icon }) {
   return (
     <div className="bg-cw-card border border-cw-border rounded-xl p-4">
@@ -882,6 +1011,9 @@ export default function DealDetail({ dealId, onBack }) {
 
       {/* Risk Assessment */}
       <RiskBadge risk={deal.risk} />
+
+      {/* Phase Breakdown — hybrid acq+dev deals only; renders nothing otherwise */}
+      <PhaseBreakdownCard data={deal.phase_context} />
 
       {/* Key Metrics */}
       <Section title="Key Metrics" icon={TrendingUp}>

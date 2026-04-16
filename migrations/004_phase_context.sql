@@ -1,0 +1,31 @@
+-- Migration 004: Add phase_context column for hybrid acq+dev deals
+--
+-- Hybrid deals (existing asset acquisition + buildable land in one
+-- transaction) can't be modeled cleanly as a single step_4-9 snapshot or
+-- as competing scenarios — both phases are real and happen sequentially.
+--
+-- phase_context carries a versioned JSON blob (schema "phase_context.v1"):
+--
+--   {
+--     "hybrid": true,
+--     "schema": "phase_context.v1",
+--     "phase_1": { label, units, rentable_sf, occupancy_pct, in_place_gpr,
+--                  fy1_noi, stabilized_noi, basis_range, basis_mid,
+--                  financing, stage },
+--     "phase_2": { label, approved_units, approved_ac, approved_product,
+--                  approved_rentable_sf, residual_ac,
+--                  residual_capacity_units, land_basis_range, land_basis_mid,
+--                  residual_lots_range, hard_cost_psf_range, financing },
+--     "combined": { total_basis_range, combined_mid, walk_above,
+--                   opening_bid, bottom_line }
+--   }
+--
+-- Written by fordcwprop/dev-agent's sync-pipeline skill when it detects
+-- phase1 / phase2_revised top-level keys on deal-state.json. NULL for
+-- canonical (non-hybrid) deals. Rendered by the frontend's PhaseBreakdownCard
+-- component above Key Metrics when present.
+--
+-- Apply with:
+--   npx wrangler d1 execute pipeline-production --file=migrations/004_phase_context.sql --remote
+
+ALTER TABLE deals ADD COLUMN phase_context TEXT;

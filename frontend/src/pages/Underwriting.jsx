@@ -20,6 +20,7 @@ const WORKFLOW_STEPS = [
   { n: '1',   title: 'Zoning & Entitlements',     skill: 'zoning-analysis',       writes: 'step_1_zoning' },
   { n: '2',   title: 'Site Conditions',           skill: 'site-analysis',         writes: 'step_2_site' },
   { n: '3',   title: 'Market & Rent Comps',       skill: 'market-rent-comps',     writes: 'step_3_market' },
+  { n: '3b',  title: 'Comp Land + Zoning Backtrace', skill: 'comp-backtrace',     writes: 'step_3b_comp_backtrace' },
   { n: '3.5', title: 'Strategy Screen',           skill: 'strategy-screen',       writes: 'step_3_5_strategy_screen' },
   { n: '4',   title: 'Unit Mix & Program',        skill: 'unit-mix-program',      writes: 'step_4_unit_mix' },
   { n: '5',   title: 'NOI Underwriting',          skill: 'noi-underwriting',      writes: 'step_5_noi' },

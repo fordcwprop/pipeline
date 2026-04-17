@@ -1,6 +1,69 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../api'
 import { ArrowLeft, Star, Save, AlertTriangle, CheckCircle, XCircle, TrendingUp, Building2, DollarSign, Calendar, Edit3, Shield, FileText, Users, Clock, MapPin, ChevronDown, ChevronRight, Map, LineChart, Home, Calculator, Landmark, Target, Briefcase } from 'lucide-react'
+import SiteMap from '../components/SiteMap'
+
+// Pull lat/lng + comps + employers + hot/cold nearby areas from whichever step
+// blobs have them. Each source is defensive: missing blob → empty contribution.
+function buildMapPropsFromDeal(deal) {
+  const parse = (v) => {
+    if (v == null) return null
+    if (typeof v !== 'string') return v
+    try { return JSON.parse(v) } catch { return null }
+  }
+  const demo = parse(deal.demographics_data) || {}
+  const market = parse(deal.market_data) || {}
+  const site_geo = demo.site_geo || {}
+  if (typeof site_geo.latitude !== 'number' || typeof site_geo.longitude !== 'number') return null
+
+  const comps = []
+  const rentComps = market.rent_comps || market.comps || market.achievable_rents?.comps
+  if (Array.isArray(rentComps)) {
+    rentComps.forEach(c => {
+      if (!c) return
+      const lat = c.lat ?? c.latitude
+      const lng = c.lng ?? c.longitude ?? c.lon
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        comps.push({
+          lat, lng,
+          label: c.property || c.name || c.address || 'Comp',
+          rent: c.rent || c.avg_rent || c.asking_rent,
+          sf:   c.sf   || c.avg_sf   || c.avg_unit_sf,
+        })
+      }
+    })
+  }
+
+  const employers = []
+  const majorEmployers = market.msa_major_employers
+  if (Array.isArray(majorEmployers)) {
+    majorEmployers.forEach(e => {
+      if (!e) return
+      const lat = e.lat ?? e.latitude
+      const lng = e.lng ?? e.longitude
+      if (typeof lat === 'number' && typeof lng === 'number') {
+        employers.push({
+          lat, lng,
+          label: e.name || e.employer || 'Employer',
+          employees: e.employees || e.size,
+        })
+      }
+    })
+  }
+
+  return {
+    site: {
+      lat: site_geo.latitude,
+      lng: site_geo.longitude,
+      label: deal.name || deal.address || 'Subject site',
+    },
+    comps,
+    employers,
+    amenities: [],
+    hotSpots: [],
+    coldSpots: [],
+  }
+}
 
 const STATUSES = ['sourced', 'under_review', 'modeled', 'shortlisted', 'under_contract', 'closed', 'dead']
 
@@ -213,10 +276,15 @@ function DemographicsCard({ data }) {
     const pri = area?.prior?.[key]
     const curVal = typeof cur === 'object' && cur !== null ? cur.value : cur
     const priVal = typeof pri === 'object' && pri !== null ? pri.value : pri
-    const pct = area?.change_pct?.[key]
+    // Annualized change: CAGR for levels (fractional), pp/yr for rates (absolute pp).
+    // Falls back to old change_pct field for back-compat with pre-CAGR payloads.
+    const ann = area?.annualized?.[key]
+    const kind = area?.change_kind?.[key] || 'level'
     const label = area?.trend_labels?.[key]
     const levelPct = area?.level_percentile_within_msa?.[key] ?? area?.level_percentile_within_region?.[key]
-    return { curVal, priVal, pct, label, levelPct }
+    // Back-compat: total % change if annualized not present
+    const legacyPct = area?.change_pct?.[key]
+    return { curVal, priVal, ann, kind, label, levelPct, legacyPct }
   }
 
   const TrendArrow = ({ label }) => {
@@ -239,7 +307,20 @@ function DemographicsCard({ data }) {
                 : p >= 40 ? 'bg-gray-700 text-gray-300'
                 : p >= 20 ? 'bg-orange-900/40 text-orange-300'
                           : 'bg-red-900/40 text-red-300'
-    return <span className={`text-[10px] px-1.5 py-0.5 rounded ${color}`}>p{Math.round(p)}</span>
+    return <span className={`text-[10px] px-1.5 py-0.5 rounded ${color}`}>{Math.round(p)}pctl</span>
+  }
+
+  // Format annualized change as "+2.41%/yr" for CAGR levels or "+0.58pp/yr" for rates
+  const formatAnnualized = (ann, kind) => {
+    if (ann == null) return null
+    if (kind === 'rate') {
+      const sign = ann > 0 ? '+' : ''
+      return `${sign}${ann.toFixed(2)}pp/yr`
+    }
+    // level — ann is fractional (0.0241 = 2.41%/yr)
+    const pct = ann * 100
+    const sign = pct > 0 ? '+' : ''
+    return `${sign}${pct.toFixed(2)}%/yr`
   }
 
   const classificationColors = {
@@ -338,13 +419,17 @@ function DemographicsCard({ data }) {
                   <td className="py-2 pr-2 text-gray-400">{label}</td>
                   {[msa, sub, trac].map((m, i) => (
                     <td key={i} className="py-2 px-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-semibold">{fmt(kind, m.curVal)}</span>
-                        {m.pct != null && (
-                          <span className={`text-xs ${m.pct > 0 ? 'text-green-400' : m.pct < 0 ? 'text-red-400' : 'text-gray-500'}`}>
-                            {m.pct > 0 ? '+' : ''}{m.pct.toFixed(1)}%
+                        {m.ann != null ? (
+                          <span className={`text-xs ${m.ann > 0 ? 'text-green-400' : m.ann < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                            {formatAnnualized(m.ann, m.kind)}
                           </span>
-                        )}
+                        ) : m.legacyPct != null ? (
+                          <span className={`text-xs ${m.legacyPct > 0 ? 'text-green-400' : m.legacyPct < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                            {m.legacyPct > 0 ? '+' : ''}{m.legacyPct.toFixed(1)}% total
+                          </span>
+                        ) : null}
                         <TrendArrow label={m.label} />
                         <PctPill p={m.levelPct} />
                       </div>
@@ -359,8 +444,9 @@ function DemographicsCard({ data }) {
           </tbody>
         </table>
         <div className="text-[10px] text-gray-500 mt-2">
-          ▲▲ booming (+20%) · ▲ up (+5–20%) · ● steady · ▼ down · ▼▼ busting.
-          {' '}Pill = level percentile within peer set (p80+ = top 20%).
+          Changes shown as CAGR (%/yr) for levels or annualized pp/yr for rates.
+          {' '}▲▲ booming · ▲ up · ● steady · ▼ down · ▼▼ busting.
+          {' '}Pill = level percentile within peer set (80pctl+ = top 20%).
         </div>
       </div>
 
@@ -1555,6 +1641,26 @@ export default function DealDetail({ dealId, onBack }) {
 
       {/* Risk Assessment */}
       <RiskBadge risk={deal.risk} />
+
+      {/* Map — satellite view with site + comps + employers when lat/lng are available */}
+      {(() => {
+        const mp = buildMapPropsFromDeal(deal)
+        if (!mp) return null
+        return (
+          <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <MapPin className="w-4 h-4 text-gray-400" />
+              <h3 className="text-sm font-semibold text-gray-400">Site Map</h3>
+              <span className="ml-auto text-xs text-gray-500">
+                {mp.comps.length > 0 && `${mp.comps.length} comps · `}
+                {mp.employers.length > 0 && `${mp.employers.length} employers · `}
+                satellite
+              </span>
+            </div>
+            <SiteMap {...mp} />
+          </div>
+        )
+      })()}
 
       {/* Phase Breakdown — hybrid acq+dev deals only; renders nothing otherwise */}
       <PhaseBreakdownCard data={deal.phase_context} />

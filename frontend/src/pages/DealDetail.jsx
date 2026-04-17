@@ -857,6 +857,39 @@ function ScenarioDetailDrawer({ scenario, sources, onClose }) {
               const noi = s5.noi ?? s5.stabilized_noi ?? s5.noi_total
               const opexPerUnit = s5.opex_per_unit ?? (totalOpex && units ? totalOpex / units : null)
               const expenseRatio = s5.expense_ratio ?? s5.opex_ratio ?? (totalOpex && egi ? totalOpex / egi : null)
+
+              // Controllables vs non-controllables per CWP methodology:
+              //   Controllables: payroll, admin/office, advertising/marketing, contracts,
+              //     turnover/turn, repairs_maintenance, utilities_owner/utilities
+              //   Non-controllables: management fee, insurance, property taxes, and any
+              //     fixed/pass-through expenses (garage share, gross receipts tax, etc.)
+              // Read from multiple key variants used across deals.
+              const pick = (...keys) => {
+                for (const k of keys) {
+                  const v = s5[k] ?? oe[k]
+                  if (v != null && isFinite(v)) return Number(v)
+                }
+                return 0
+              }
+              const ctrlParts = {
+                payroll: pick('payroll'),
+                admin: pick('admin', 'office_admin', 'office_administrative', 'general_admin'),
+                marketing: pick('advertising', 'marketing', 'marketing_advertising'),
+                contracts: pick('contracts', 'contract_services'),
+                turnover: pick('turnover', 'turn', 'turnover_costs'),
+                rm: pick('repairs_maintenance', 'r_and_m', 'repairs', 'maintenance'),
+                utilities: pick('utilities_owner', 'utilities', 'owner_utilities'),
+              }
+              const controllables = Object.values(ctrlParts).reduce((a, b) => a + b, 0)
+              const nonControllables = (totalOpex && totalOpex > controllables)
+                ? totalOpex - controllables
+                : (pick('property_mgmt', 'management_fee') +
+                   pick('insurance') +
+                   pick('real_estate_taxes', 'taxes', 'property_taxes'))
+              const ctrlPerUnit = (units && controllables > 0) ? controllables / units : null
+              const nonCtrlPerUnit = (units && nonControllables > 0) ? nonControllables / units : null
+              const ctrlPctOpex = (totalOpex && controllables > 0) ? controllables / totalOpex : null
+
               return (
                 <KVTable rows={[
                   ['Gross Potential Rent', gpr ? `${fmtMoneyM(gpr)} / yr` : '—'],
@@ -866,6 +899,20 @@ function ScenarioDetailDrawer({ scenario, sources, onClose }) {
                   ['Other Income', oi ? `${fmtMoneyM(oi)}${oiPct ? ` (${(normPct(oiPct) * 100).toFixed(1)}% of GPR)` : ''}` : null],
                   ['Effective Gross Income', egi ? `${fmtMoneyM(egi)} / yr` : '—'],
                   ['Management fee', mgmtPct != null ? `${(mgmtPct * 100).toFixed(2)}% of EGI` : null],
+                  ['Controllables', controllables > 0 ? (
+                    <span className="text-gray-200">
+                      {fmtMoneyM(controllables)}
+                      {ctrlPerUnit ? <span className="text-gray-500"> · {fmtMoney(ctrlPerUnit)}/unit</span> : null}
+                      {ctrlPctOpex != null ? <span className="text-gray-500"> · {(ctrlPctOpex * 100).toFixed(0)}% of OpEx</span> : null}
+                    </span>
+                  ) : null],
+                  ['Non-Controllables', nonControllables > 0 ? (
+                    <span className="text-gray-200">
+                      {fmtMoneyM(nonControllables)}
+                      {nonCtrlPerUnit ? <span className="text-gray-500"> · {fmtMoney(nonCtrlPerUnit)}/unit</span> : null}
+                      {ctrlPctOpex != null ? <span className="text-gray-500"> · {((1 - ctrlPctOpex) * 100).toFixed(0)}% of OpEx</span> : null}
+                    </span>
+                  ) : null],
                   ['Total Operating Expenses', totalOpex ? fmtMoneyM(totalOpex) : '—'],
                   ['Opex / unit', opexPerUnit ? fmtMoney(opexPerUnit) : null],
                   ['Expense Ratio', expenseRatio != null ? `${(expenseRatio * 100).toFixed(1)}%` : null],

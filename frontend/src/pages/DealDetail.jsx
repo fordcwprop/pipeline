@@ -119,7 +119,14 @@ function PhaseBreakdownCard({ data }) {
 
   const fmtM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(1)}M` : '—'
   const fmtN = (v) => (v || v === 0) ? v.toLocaleString() : '—'
-  const fmtPct = (v) => (v || v === 0) ? `${(v * 100).toFixed(2)}%` : '—'
+  // Defensive: any percent stored as whole-number (e.g. yoc=5.66 meaning 5.66%)
+  // is detected via |v| >= 1 and rendered as-is. Decimals (0.0566) are scaled x100.
+  const fmtPct = (v) => {
+    if (v === null || v === undefined || !isFinite(v)) return '—'
+    if (v === 0) return '0.00%'
+    if (Math.abs(v) >= 1) return `${Number(v).toFixed(2)}%`
+    return `${(v * 100).toFixed(2)}%`
+  }
   const fmtRange = (r) => (Array.isArray(r) && r.length === 2) ? `$${(r[0]/1e6).toFixed(1)}M – $${(r[1]/1e6).toFixed(1)}M` : '—'
 
   const Field = ({ label, value, span = 1 }) => (
@@ -1047,7 +1054,13 @@ function ScenariosTable({ data, sources }) {
   } catch { return null }
   if (!Array.isArray(scenarios) || scenarios.length === 0) return null
 
-  const fmtPct = (v) => (v || v === 0) ? `${(v * 100).toFixed(2)}%` : '—'
+  // Detect already-percent values (|v| >= 1) so legacy deal-states don't render 566%.
+  const fmtPct = (v) => {
+    if (v === null || v === undefined || !isFinite(v)) return '—'
+    if (v === 0) return '0.00%'
+    if (Math.abs(v) >= 1) return `${Number(v).toFixed(2)}%`
+    return `${(v * 100).toFixed(2)}%`
+  }
   const fmtMoneyM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(2)}M` : '—'
 
   const summarize = (s) => {
@@ -1785,7 +1798,11 @@ export default function DealDetail({ dealId, onBack }) {
 
   const m = deal.metrics || {}
   const fmt = (v, suffix = '') => v ? `${v}${suffix}` : '—'
-  const fmtPct = (v) => v ? `${(v * 100).toFixed(2)}%` : '—'
+  const fmtPct = (v) => {
+    if (!v || !isFinite(v)) return '—'
+    if (Math.abs(v) >= 1) return `${Number(v).toFixed(2)}%`
+    return `${(v * 100).toFixed(2)}%`
+  }
   const fmtMoney = (v) => v ? `$${v.toLocaleString()}` : '—'
   const fmtMoneyM = (v) => v ? `$${(v / 1e6).toFixed(2)}M` : '—'
 

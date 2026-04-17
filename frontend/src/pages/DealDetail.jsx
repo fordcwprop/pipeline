@@ -167,6 +167,260 @@ function PhaseBreakdownCard({ data }) {
   )
 }
 
+// Renders step_2b_demographics. Reads the `demographics_data` JSON blob written by
+// the fordcwprop/dev-agent `demographics` sub-skill. Shows:
+//   - Classification chip + narrative paragraph (top)
+//   - 3-column comparison table (MSA / Submarket / Site tract) with current value,
+//     5-yr % change, trend arrow, and level-vs-MSA percentile when available
+//   - Hot / Cold map: lists of nearby areas in each category
+//   - Special notes callout
+//   - Submarket definition footer (method + what's included)
+// Returns null for deals that haven't run step_2b yet.
+function DemographicsCard({ data }) {
+  const d = typeof data === 'string' ? (() => { try { return JSON.parse(data) } catch { return null } })() : data
+  if (!d || (!d.areas && !d.narrative && !d.takeaway_for_site)) return null
+
+  const areas = d.areas || {}
+  const hotCold = d.hot_cold_map || {}
+  const special = Array.isArray(d.special_notes) ? d.special_notes : []
+  const takeaway = d.takeaway_for_site || {}
+  const sub = d.submarket_definition || {}
+
+  // Metric display order + labels. Match SKILL.md metrics_tracked.
+  const METRICS = [
+    ['median_household_income',  'Median HH Income',  'money'],
+    ['population',               'Population',        'int'],
+    ['pct_bachelors_plus',       "Bachelor's+",       'pct'],
+    ['unemployment_rate',        'Unemployment',      'pct'],
+    ['median_home_value',        'Median Home Value', 'money'],
+    ['median_age',               'Median Age',        'num'],
+    ['pct_owner_occupied',       'Owner-Occupied',    'pct'],
+    ['poverty_rate',             'Poverty Rate',      'pct'],
+  ]
+
+  const fmt = (kind, v) => {
+    if (v == null || v === '' || Number.isNaN(v)) return '—'
+    const n = typeof v === 'number' ? v : (typeof v === 'object' && v !== null ? v.value : parseFloat(v))
+    if (n == null || Number.isNaN(n)) return '—'
+    if (kind === 'money') return n >= 1e6 ? `$${(n/1e6).toFixed(2)}M` : `$${Math.round(n).toLocaleString()}`
+    if (kind === 'int')   return Math.round(n).toLocaleString()
+    if (kind === 'pct')   return `${n.toFixed(1)}%`
+    return n.toFixed(1)
+  }
+
+  const getMetric = (area, key) => {
+    const cur = area?.current?.[key]
+    const pri = area?.prior?.[key]
+    const curVal = typeof cur === 'object' && cur !== null ? cur.value : cur
+    const priVal = typeof pri === 'object' && pri !== null ? pri.value : pri
+    const pct = area?.change_pct?.[key]
+    const label = area?.trend_labels?.[key]
+    const levelPct = area?.level_percentile_within_msa?.[key] ?? area?.level_percentile_within_region?.[key]
+    return { curVal, priVal, pct, label, levelPct }
+  }
+
+  const TrendArrow = ({ label }) => {
+    if (!label || label === 'unknown') return <span className="text-gray-500">—</span>
+    const map = {
+      booming: { icon: '▲▲', color: 'text-emerald-400' },
+      up:      { icon: '▲',  color: 'text-green-400' },
+      steady:  { icon: '●',  color: 'text-gray-400' },
+      down:    { icon: '▼',  color: 'text-orange-400' },
+      busting: { icon: '▼▼', color: 'text-red-400' },
+    }
+    const m = map[label] || { icon: '●', color: 'text-gray-400' }
+    return <span className={`${m.color} text-xs`} title={label}>{m.icon}</span>
+  }
+
+  const PctPill = ({ p }) => {
+    if (p == null) return null
+    const color = p >= 80 ? 'bg-emerald-900/40 text-emerald-300'
+                : p >= 60 ? 'bg-green-900/40 text-green-300'
+                : p >= 40 ? 'bg-gray-700 text-gray-300'
+                : p >= 20 ? 'bg-orange-900/40 text-orange-300'
+                          : 'bg-red-900/40 text-red-300'
+    return <span className={`text-[10px] px-1.5 py-0.5 rounded ${color}`}>p{Math.round(p)}</span>
+  }
+
+  const classificationColors = {
+    already_good:      'bg-emerald-900/40 text-emerald-300 border-emerald-800',
+    adjacent_to_good:  'bg-green-900/40 text-green-300 border-green-800',
+    path_of_growth:    'bg-blue-900/40 text-blue-300 border-blue-800',
+    mixed_signal:      'bg-yellow-900/40 text-yellow-300 border-yellow-800',
+    skipped_over:      'bg-orange-900/40 text-orange-300 border-orange-800',
+    declining:         'bg-red-900/40 text-red-300 border-red-800',
+  }
+  const classifColor = classificationColors[takeaway.classification] || 'bg-gray-700 text-gray-300 border-gray-600'
+
+  const AreaList = ({ title, items, tone }) => {
+    if (!Array.isArray(items) || items.length === 0) return null
+    const toneColor = {
+      hot:  'text-emerald-300',
+      cold: 'text-red-300',
+      gent: 'text-blue-300',
+      skip: 'text-orange-300',
+      decl: 'text-red-400',
+    }[tone] || 'text-gray-300'
+    return (
+      <div>
+        <div className={`text-xs uppercase tracking-wide mb-1 ${toneColor}`}>{title}</div>
+        <div className="flex flex-wrap gap-1.5">
+          {items.slice(0, 8).map((it, i) => (
+            <span key={i} className="text-xs bg-cw-dark border border-cw-border rounded px-2 py-0.5"
+                  title={it.note || ''}>
+              {it.label || it.id}
+            </span>
+          ))}
+          {items.length > 8 && <span className="text-xs text-gray-500">+{items.length - 8} more</span>}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Users className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Demographics & Socioeconomic Context</h3>
+        {takeaway.classification && (
+          <span className={`text-xs px-2 py-0.5 rounded border ${classifColor} ml-auto`}>
+            {takeaway.classification.replace(/_/g, ' ')}
+            {takeaway.confidence && ` · ${takeaway.confidence} conf`}
+          </span>
+        )}
+      </div>
+
+      {/* Narrative */}
+      {d.narrative && (
+        <div className="bg-cw-dark rounded-lg p-4 mb-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Narrative</div>
+          <p className="text-sm text-gray-200 leading-relaxed whitespace-pre-wrap">{d.narrative}</p>
+        </div>
+      )}
+
+      {/* Takeaway */}
+      {(takeaway.rent_implication || takeaway.strategy_implication || (takeaway.key_signals || []).length) && (
+        <div className="bg-cw-dark rounded-lg p-4 mb-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Takeaway for this site</div>
+          {Array.isArray(takeaway.key_signals) && takeaway.key_signals.length > 0 && (
+            <ul className="text-sm text-gray-200 list-disc ml-5 mb-2 space-y-0.5">
+              {takeaway.key_signals.map((s, i) => <li key={i}>{s}</li>)}
+            </ul>
+          )}
+          {takeaway.rent_implication && (
+            <div className="text-sm text-gray-200"><span className="text-xs uppercase text-gray-500 mr-2">Rent</span>{takeaway.rent_implication}</div>
+          )}
+          {takeaway.strategy_implication && (
+            <div className="text-sm text-gray-200 mt-1"><span className="text-xs uppercase text-gray-500 mr-2">Strategy</span>{takeaway.strategy_implication}</div>
+          )}
+        </div>
+      )}
+
+      {/* Comparison table */}
+      <div className="bg-cw-dark rounded-lg p-4 mb-4 overflow-x-auto">
+        <div className="text-xs text-gray-500 uppercase tracking-wide mb-3">MSA · Submarket · Site Tract</div>
+        <table className="w-full text-sm min-w-[600px]">
+          <thead>
+            <tr className="text-xs text-gray-500 border-b border-cw-border">
+              <th className="text-left pb-2 pr-2">Metric</th>
+              <th className="text-left pb-2 px-2">{areas.msa?.label || 'MSA'}</th>
+              <th className="text-left pb-2 px-2">{areas.submarket?.label || 'Submarket'}</th>
+              <th className="text-left pb-2 px-2">{areas.tract_local?.combined_label || 'Site tract'}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {METRICS.map(([key, label, kind]) => {
+              const msa  = getMetric(areas.msa, key)
+              const sub  = getMetric(areas.submarket, key)
+              const trac = getMetric(areas.tract_local, key)
+              return (
+                <tr key={key} className="border-b border-cw-border/50">
+                  <td className="py-2 pr-2 text-gray-400">{label}</td>
+                  {[msa, sub, trac].map((m, i) => (
+                    <td key={i} className="py-2 px-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold">{fmt(kind, m.curVal)}</span>
+                        {m.pct != null && (
+                          <span className={`text-xs ${m.pct > 0 ? 'text-green-400' : m.pct < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                            {m.pct > 0 ? '+' : ''}{m.pct.toFixed(1)}%
+                          </span>
+                        )}
+                        <TrendArrow label={m.label} />
+                        <PctPill p={m.levelPct} />
+                      </div>
+                      {m.priVal != null && (
+                        <div className="text-[10px] text-gray-500">was {fmt(kind, m.priVal)}</div>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+        <div className="text-[10px] text-gray-500 mt-2">
+          ▲▲ booming (+20%) · ▲ up (+5–20%) · ● steady · ▼ down · ▼▼ busting.
+          {' '}Pill = level percentile within peer set (p80+ = top 20%).
+        </div>
+      </div>
+
+      {/* Hot / Cold Map */}
+      {(hotCold.hot_by_level?.length || hotCold.hot_by_trend?.length || hotCold.cold_by_level?.length ||
+        hotCold.gentrifying?.length || hotCold.skipped_over?.length || hotCold.declining?.length) ? (
+        <div className="bg-cw-dark rounded-lg p-4 mb-4">
+          <div className="flex items-baseline justify-between mb-3">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Hot / Cold Map — Nearby Areas</div>
+            {hotCold.peer_count != null && (
+              <div className="text-[10px] text-gray-500">{hotCold.peer_count} peers · {hotCold.peer_set}</div>
+            )}
+          </div>
+          <div className="grid md:grid-cols-2 gap-3">
+            <AreaList title="Hot by level (already strong)"  items={hotCold.hot_by_level}  tone="hot" />
+            <AreaList title="Hot by trend (fast growth)"      items={hotCold.hot_by_trend}  tone="hot" />
+            <AreaList title="Cold by level (currently weak)"  items={hotCold.cold_by_level} tone="cold" />
+            <AreaList title="Cold by trend (declining)"       items={hotCold.cold_by_trend} tone="cold" />
+            <AreaList title="Gentrifying (cold→hot trend)"    items={hotCold.gentrifying}   tone="gent" />
+            <AreaList title="Spillover candidates (near us)"  items={hotCold.spillover_candidates} tone="hot" />
+            <AreaList title="Skipped-over (flat while neighbors boom)" items={hotCold.skipped_over} tone="skip" />
+            <AreaList title="Declining (was strong, now fading)" items={hotCold.declining}  tone="decl" />
+          </div>
+        </div>
+      ) : null}
+
+      {/* Special notes */}
+      {special.length > 0 && (
+        <div className="bg-cw-dark rounded-lg p-4 mb-4">
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Special Notes</div>
+          <ul className="space-y-2">
+            {special.map((n, i) => (
+              <li key={i} className="text-sm">
+                <div className="font-semibold text-gray-200">
+                  {n.label}
+                  {n.confidence && <span className="text-[10px] text-gray-500 ml-2">({n.confidence})</span>}
+                </div>
+                {n.metric_evidence && <div className="text-xs text-gray-400">{n.metric_evidence}</div>}
+                {n.implication_for_deal && <div className="text-xs text-gray-300 italic mt-0.5">{n.implication_for_deal}</div>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Submarket definition footer */}
+      {sub.method && (
+        <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1 pt-2 border-t border-cw-border">
+          <div><span className="uppercase tracking-wide mr-1">Submarket:</span> {sub.method}</div>
+          {sub.method_rationale && <div className="italic">{sub.method_rationale}</div>}
+          {Array.isArray(sub.zip_codes_included) && sub.zip_codes_included.length > 0 && (
+            <div>ZIPs: {sub.zip_codes_included.join(', ')}</div>
+          )}
+          {sub.population_covered != null && <div>Pop: {Number(sub.population_covered).toLocaleString()}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function Section({ title, children, icon: Icon }) {
   return (
     <div className="bg-cw-card border border-cw-border rounded-xl p-4">
@@ -1103,6 +1357,12 @@ export default function DealDetail({ dealId, onBack }) {
         <StepBlock n="2" title="Site Conditions" icon={Map}>
           <StepSection title="Site output" icon={FileText} data={deal.site_data} stepKey="step_2_site" />
           {!deal.site_data && <p className="text-sm text-gray-600 italic">No site analysis yet.</p>}
+        </StepBlock>
+
+        <StepBlock n="2b" title="Demographics" icon={Users}>
+          <DemographicsCard data={deal.demographics_data} />
+          <StepSection title="Demographics output" icon={FileText} data={deal.demographics_data} stepKey="step_2b_demographics" />
+          {!deal.demographics_data && <p className="text-sm text-gray-600 italic">No demographics analysis yet.</p>}
         </StepBlock>
 
         <StepBlock n="3" title="Market & Rent Comps" icon={LineChart}>

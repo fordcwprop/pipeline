@@ -1,0 +1,40 @@
+-- Migration 005: Add demographics_data column for step_2b_demographics output
+--
+-- The demographics step analyzes MSA / submarket / site tract / hot-cold
+-- neighbors across income, population, education, employment sectors,
+-- unemployment, housing, age, ownership, poverty — with 5-yr trend AND
+-- two-axis percentile ranks (level + trend) vs MSA peers. Plus a
+-- narrative paragraph and a takeaway classification.
+--
+-- Schema (JSON blob, versioned as "demographics.v1"):
+--   {
+--     "site_geo": { latitude, longitude, zip, census_tract_geoid,
+--                   adjacent_tract_geoids, cbsa_code, msa_name, county_fips },
+--     "submarket_definition": { method, method_rationale,
+--                               zip_codes_included, tract_geoids_included, ... },
+--     "areas": {
+--       "msa":         { label, current:{...}, prior:{...}, change_pct:{...},
+--                        trend_labels:{...}, level_percentile_within_region:{...},
+--                        trend_percentile_within_region:{...} },
+--       "submarket":   { same shape, percentiles within MSA },
+--       "tract_local": { same shape, percentiles within MSA }
+--     },
+--     "hot_cold_map": { peer_set, peer_count,
+--                       hot_by_level:[], hot_by_trend:[],
+--                       cold_by_level:[], cold_by_trend:[],
+--                       gentrifying:[], skipped_over:[],
+--                       declining:[], spillover_candidates:[] },
+--     "special_notes": [ { label, metric_evidence, implication_for_deal, confidence } ],
+--     "narrative": "...",
+--     "takeaway_for_site": { classification, confidence, key_signals,
+--                            rent_implication, strategy_implication }
+--   }
+--
+-- Written by fordcwprop/dev-agent's demographics sub-skill and synced via
+-- sync-pipeline. Rendered by the frontend's DemographicsCard component on
+-- the DealDetail page between the site and market sections.
+--
+-- Apply with:
+--   npx wrangler d1 execute pipeline-production --file=migrations/005_demographics.sql --remote
+
+ALTER TABLE deals ADD COLUMN demographics_data TEXT;

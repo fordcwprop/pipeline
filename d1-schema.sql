@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS deals (
     -- in the fordcwprop/dev-agent repo. See Dev Agent/system/architecture.md.
     zoning_data TEXT,          -- step_1_zoning (the broader zoning output; entitlement_data is the case-history subset)
     site_data TEXT,            -- step_2_site
+    demographics_data TEXT,    -- step_2b_demographics
     market_data TEXT,          -- step_3_market
     strategy_screen_data TEXT, -- step_3_5_strategy_screen
     noi_data TEXT,             -- step_5_noi

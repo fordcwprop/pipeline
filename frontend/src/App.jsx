@@ -9,7 +9,7 @@ import Strategies from './pages/Strategies'
 import Underwriting from './pages/Underwriting'
 
 function App() {
-  const [page, setPage] = useState('dashboard')
+  const [page, setPage] = useState('pipeline')
   const [selectedDealId, setSelectedDealId] = useState(null)
   const [user, setUser] = useState(null)
 
@@ -62,7 +62,7 @@ function App() {
       case 'underwriting':
         return <Underwriting />
       default:
-        return <Dashboard onNavigateToDeal={navigateToDeal} onNavigate={setPage} />
+        return <Pipeline onNavigateToDeal={navigateToDeal} />
     }
   }
 

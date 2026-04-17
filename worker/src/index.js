@@ -77,15 +77,39 @@ function errorResponse(message, status = 400) {
 // Financial Calculations
 // ────────────────────────────────────────────────────────────────
 
+// Normalize a percent-shaped field that might have been stored as a whole
+// number (e.g. 6 for 6%) instead of a fraction (0.06). Conservative: only
+// divides by 100 when the value is clearly in the 1–100 range where no
+// sensible fraction would land.
+function normalizePct(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  // Anything > 1 on a pct field must have been written as whole-number %.
+  if (n > 1) return n / 100;
+  return n;
+}
+
 function calculateMetrics(deal) {
   const d = deal;
   const units = d.units || 0;
   const purchasePrice = d.purchase_price || 0;
   if (!purchasePrice || !units) return {};
 
-  // Revenue
+  // Guardrail: detect "step_5 never populated" — all expense line items are
+  // zero/null AND no override. Computing NOI from just GPR minus mgmt-fee-at-
+  // default produces a phantom cap rate that matches no scenario. Better to
+  // surface nothing than a wrong number. We still compute financing/basis
+  // metrics that don't depend on NOI.
+  const opexLineSum =
+    (d.taxes || 0) + (d.insurance || 0) + (d.utilities || 0) +
+    (d.repairs_maintenance || 0) + (d.payroll || 0) +
+    (d.admin || 0) + (d.marketing || 0);
+  const opexPopulated = opexLineSum > 0 || (d.total_expenses_override && d.total_expenses_override > 0);
+
+  // Revenue — normalize vacancy_rate in case it was stored as 6 (meaning 6%)
   const gpr = d.gross_potential_rent || 0;
-  const vacancyRate = d.vacancy_rate || 0.05;
+  const vacancyRate = normalizePct(d.vacancy_rate) ?? 0.05;
   const otherIncome = (d.other_income_per_unit || 0) * units;
   const concessions = (d.concessions_per_unit || 0) * units;
   const effectiveGrossIncome = gpr * (1 - vacancyRate) + otherIncome - concessions;
@@ -95,7 +119,8 @@ function calculateMetrics(deal) {
   if (d.total_expenses_override) {
     totalExpenses = d.total_expenses_override;
   } else {
-    const managementFee = effectiveGrossIncome * (d.management_fee_pct || 0.03);
+    const mgmtPct = normalizePct(d.management_fee_pct) ?? 0.03;
+    const managementFee = effectiveGrossIncome * mgmtPct;
     const capexReserve = (d.capex_reserve_per_unit || 250) * units;
     totalExpenses = (d.taxes || 0) + (d.insurance || 0) + (d.utilities || 0) +
       (d.repairs_maintenance || 0) + managementFee + (d.admin || 0) +
@@ -107,10 +132,12 @@ function calculateMetrics(deal) {
   // Acquisition
   const totalBasis = purchasePrice + (d.closing_costs || 0) + (d.capex_budget || 0);
 
-  // Financing
-  const loanAmount = purchasePrice * (d.ltv || 0.65);
+  // Financing — normalize in case pct fields arrived as whole numbers
+  const ltvFrac = normalizePct(d.ltv) ?? 0.65;
+  const interestFrac = normalizePct(d.interest_rate) ?? 0.065;
+  const loanAmount = purchasePrice * ltvFrac;
   const equity = totalBasis - loanAmount;
-  const monthlyRate = (d.interest_rate || 0.065) / 12;
+  const monthlyRate = interestFrac / 12;
   const numPayments = (d.amortization_years || 30) * 12;
   const monthlyPayment = monthlyRate > 0
     ? loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, numPayments)) / (Math.pow(1 + monthlyRate, numPayments) - 1)
@@ -119,7 +146,7 @@ function calculateMetrics(deal) {
 
   // IO period adjustment
   const ioMonths = d.io_period_months || 0;
-  const year1DebtService = ioMonths >= 12 ? loanAmount * (d.interest_rate || 0.065) : annualDebtService;
+  const year1DebtService = ioMonths >= 12 ? loanAmount * interestFrac : annualDebtService;
 
   // Key metrics
   const goingInCapRate = purchasePrice > 0 ? noi / purchasePrice : 0;
@@ -131,13 +158,13 @@ function calculateMetrics(deal) {
   const expenseRatio = effectiveGrossIncome > 0 ? totalExpenses / effectiveGrossIncome : 0;
   const expensePerUnit = units > 0 ? totalExpenses / units : 0;
 
-  // Exit & return
-  const exitCapRate = d.exit_cap_rate || 0.055;
+  // Exit & return — normalize pct fields
+  const exitCapRate = normalizePct(d.exit_cap_rate) ?? 0.055;
   const holdYears = d.hold_period_years || 5;
   const growthRate = 0.025; // 2.5% annual NOI growth assumption
   const exitNoi = noi * Math.pow(1 + growthRate, holdYears);
   const exitValue = exitCapRate > 0 ? exitNoi / exitCapRate : 0;
-  const saleCosts = exitValue * (d.sale_costs_pct || 0.02);
+  const saleCosts = exitValue * (normalizePct(d.sale_costs_pct) ?? 0.02);
 
   // Remaining loan balance (simplified)
   let remainingBalance = loanAmount;
@@ -163,7 +190,7 @@ function calculateMetrics(deal) {
   const cashFlows = [-equity];
   for (let y = 1; y <= holdYears; y++) {
     const yearNoi = noi * Math.pow(1 + growthRate, y);
-    const yearDs = y * 12 <= ioMonths ? loanAmount * (d.interest_rate || 0.065) : annualDebtService;
+    const yearDs = y * 12 <= ioMonths ? loanAmount * interestFrac : annualDebtService;
     const yearCf = yearNoi - yearDs;
     if (y === holdYears) {
       cashFlows.push(yearCf + netProceeds);
@@ -187,6 +214,26 @@ function calculateMetrics(deal) {
 
   // Yield on cost
   const yieldOnCost = totalBasis > 0 ? noi / totalBasis : 0;
+
+  // If step_5 was never populated (all opex line items zero / null), the
+  // NOI-derived metrics below are meaningless phantom numbers — suppress
+  // them. Basis / financing / exit metrics that don't depend on NOI still go
+  // through. Caller should render these as "—" in the UI.
+  if (!opexPopulated) {
+    return {
+      incomplete: true,
+      incomplete_reason: 'step_5_noi not populated — expense line items are all zero',
+      effective_gross_income: Math.round(effectiveGrossIncome),
+      total_basis: Math.round(totalBasis),
+      price_per_unit: Math.round(pricePerUnit),
+      price_per_sf: Math.round(pricePerSF),
+      loan_amount: Math.round(loanAmount),
+      equity: Math.round(equity),
+      annual_debt_service: Math.round(annualDebtService),
+      // NOI / cap / YoC / DSCR / cash-on-cash / IRR / equity-multiple / exit
+      // intentionally omitted — they depend on NOI which is fabricated.
+    };
+  }
 
   return {
     noi: Math.round(noi),
@@ -453,7 +500,8 @@ async function handleGetStats(request, env) {
   const starred = await env.DB.prepare('SELECT COUNT(*) as count FROM deals WHERE starred = 1').first();
 
   // Aggregate metrics
-  const allDeals = await env.DB.prepare('SELECT * FROM deals WHERE status != ?').bind('dead').all();
+  // Exclude killed + dead from aggregate stats (both statuses mean "not pursuing")
+  const allDeals = await env.DB.prepare("SELECT * FROM deals WHERE status NOT IN ('killed','dead')").all();
   const metrics = (allDeals.results || []).map(d => calculateMetrics(d)).filter(m => m.noi);
 
   const avgCapRate = metrics.length ? metrics.reduce((s, m) => s + m.going_in_cap_rate, 0) / metrics.length : 0;

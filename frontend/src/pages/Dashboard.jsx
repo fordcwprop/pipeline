@@ -23,6 +23,7 @@ function StatusBadge({ status }) {
     shortlisted: 'bg-cw-yellow text-black',
     under_contract: 'bg-cw-orange',
     closed: 'bg-cw-green',
+    killed: 'bg-cw-red',
     dead: 'bg-cw-red',
   }
   return (

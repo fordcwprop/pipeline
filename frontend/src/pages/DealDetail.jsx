@@ -65,7 +65,7 @@ function buildMapPropsFromDeal(deal) {
   }
 }
 
-const STATUSES = ['sourced', 'under_review', 'modeled', 'shortlisted', 'under_contract', 'closed', 'dead']
+const STATUSES = ['sourced', 'under_review', 'modeled', 'shortlisted', 'under_contract', 'closed', 'killed', 'dead']
 
 function MetricCard({ label, value, sub, good, warn }) {
   let color = 'text-white'
@@ -1667,6 +1667,13 @@ export default function DealDetail({ dealId, onBack }) {
 
       {/* Key Metrics */}
       <Section title="Key Metrics" icon={TrendingUp}>
+        {m.incomplete && (
+          <div className="mb-3 p-3 rounded-lg border border-yellow-900/50 bg-yellow-900/20 text-xs text-yellow-200">
+            NOI-dependent metrics suppressed — step_5 (NOI underwriting) not yet populated.
+            {m.incomplete_reason && <span className="text-yellow-400"> {m.incomplete_reason}.</span>}
+            {' '}Basis / financing / $-per-unit metrics still shown below.
+          </div>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
           <MetricCard label="Going-in Cap" value={fmtPct(m.going_in_cap_rate)} good={m.going_in_cap_rate >= 0.055} warn={m.going_in_cap_rate >= 0.045} />
           <MetricCard label="DSCR" value={m.dscr ? `${m.dscr.toFixed(2)}x` : '—'} good={m.dscr >= 1.25} warn={m.dscr >= 1.15} />

@@ -60,7 +60,7 @@ export default function Pipeline({ onNavigateToDeal }) {
   const [deals, setDeals] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [showDead, setShowDead] = useState(false)
+  const [showDead, setShowDead] = useState(false) // toggle covers killed + dead
   const [view, setView] = useState('board') // 'board' or 'table'
   const [stateFilter, setStateFilter] = useState('')
   const [sortField, setSortField] = useState('created_at')
@@ -94,23 +94,28 @@ export default function Pipeline({ onNavigateToDeal }) {
 
   const states = useMemo(() => [...new Set(deals.map(d => d.state).filter(Boolean))].sort(), [deals])
 
+  // `killed` and `dead` are synonymous for "not pursuing" — both are hidden
+  // by default. Use `killed` going forward (user preference); `dead` retained
+  // for back-compat with existing deals.
+  const isInactive = (d) => d.status === 'killed' || d.status === 'dead'
+
   // Board view - group by status
   const dealsByStatus = useMemo(() => {
     const grouped = {}
     STATUS_COLUMNS.forEach(col => grouped[col.key] = [])
     filteredDeals.forEach(d => {
-      if (d.status === 'dead' && !showDead) return
+      if (isInactive(d) && !showDead) return
       if (grouped[d.status]) grouped[d.status].push(d)
-      else if (d.status === 'dead') grouped['dead'] = [...(grouped['dead'] || []), d]
+      else if (isInactive(d)) grouped['killed'] = [...(grouped['killed'] || []), d]
     })
     return grouped
   }, [filteredDeals, showDead])
 
-  const deadDeals = filteredDeals.filter(d => d.status === 'dead')
+  const deadDeals = filteredDeals.filter(isInactive)
 
   // Table view - sorted
   const sortedDeals = useMemo(() => {
-    const result = [...filteredDeals].filter(d => showDead || d.status !== 'dead')
+    const result = [...filteredDeals].filter(d => showDead || !isInactive(d))
     result.sort((a, b) => {
       let aVal, bVal
       if (['going_in_cap_rate', 'dscr', 'price_per_unit', 'cash_on_cash', 'levered_irr'].includes(sortField)) {
@@ -193,14 +198,14 @@ export default function Pipeline({ onNavigateToDeal }) {
                 </div>
               </div>
             ))}
-            {/* Dead column - collapsible */}
+            {/* Killed/Dead column - collapsible (both statuses pooled) */}
             {deadDeals.length > 0 && (
               <div className="w-72 flex flex-col shrink-0">
                 <button
                   onClick={() => setShowDead(!showDead)}
                   className="flex items-center gap-2 mb-3 pb-2 border-b-2 border-red-500 text-left"
                 >
-                  <span className="text-sm font-semibold text-gray-300">Dead</span>
+                  <span className="text-sm font-semibold text-gray-300">Killed</span>
                   <span className="text-xs bg-cw-dark px-1.5 py-0.5 rounded text-gray-500">{deadDeals.length}</span>
                   <ChevronDown className={`w-3 h-3 text-gray-500 transition-transform ${showDead ? 'rotate-180' : ''}`} />
                 </button>
@@ -283,7 +288,7 @@ export default function Pipeline({ onNavigateToDeal }) {
                       <span className={`px-2 py-0.5 rounded text-xs ${
                         deal.status === 'shortlisted' ? 'bg-yellow-600/20 text-cw-yellow' :
                         deal.status === 'closed' ? 'bg-green-600/20 text-cw-green' :
-                        deal.status === 'dead' ? 'bg-red-600/20 text-cw-red' :
+                        (deal.status === 'killed' || deal.status === 'dead') ? 'bg-red-600/20 text-cw-red' :
                         'bg-gray-600/20 text-gray-400'
                       }`}>
                         {deal.status?.replace(/_/g, ' ')}

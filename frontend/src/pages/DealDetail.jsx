@@ -649,7 +649,19 @@ function ScenarioDetailDrawer({ scenario, sources, onClose }) {
   const s8 = scenario.step_8_returns || {}
   const s9 = scenario.step_9_strategy || {}
 
-  const fmtPct = (v) => (v || v === 0) ? `${(v * 100).toFixed(2)}%` : '—'
+  // Defense-in-depth: any percent stored as whole number (e.g. ltv: 70.0
+  // meaning 70%, not 7000%) must be divided by 100 before rendering.
+  const normPct = (v) => {
+    if (v == null) return null
+    const n = Number(v)
+    if (!Number.isFinite(n)) return null
+    return n > 1 ? n / 100 : n
+  }
+
+  const fmtPct = (v) => {
+    const n = normPct(v)
+    return (n != null) ? `${(n * 100).toFixed(2)}%` : '—'
+  }
   const fmtMoneyM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(2)}M` : '—'
   const fmtMoney = (v) => (v || v === 0) ? `$${Math.round(v).toLocaleString()}` : '—'
   const fmtX = (v) => (v || v === 0) ? `${Number(v).toFixed(2)}x` : '—'
@@ -665,6 +677,28 @@ function ScenarioDetailDrawer({ scenario, sources, onClose }) {
   const unitMixRows = Array.isArray(s4.unit_mix) ? s4.unit_mix
     : Array.isArray(s4.units_by_type) ? s4.units_by_type
     : Array.isArray(s4.mix) ? s4.mix : []
+
+  // Totals across unit-mix rows (count-weighted where appropriate)
+  const mixTotals = (() => {
+    let totCount = 0, totSF = 0, totRent = 0 /* count × monthly rent */
+    for (const u of unitMixRows) {
+      const ct   = Number(u.count ?? u.units ?? 0) || 0
+      const sf   = Number(u.avg_sf ?? u.sf ?? 0) || 0
+      const rent = Number(u.avg_rent ?? u.rent ?? u.monthly_rent ?? 0) || 0
+      totCount += ct
+      totSF    += ct * sf
+      totRent  += ct * rent
+    }
+    return {
+      count: totCount,
+      total_sf: totSF,
+      avg_sf: totCount > 0 ? totSF / totCount : null,
+      avg_rent: totCount > 0 ? totRent / totCount : null,
+      rent_psf: totSF > 0 ? (totRent * 12) / (totSF * 12) : null,  // i.e. avg_rent / avg_sf
+      gpr_annual: totRent * 12,
+    }
+  })()
+  const totalSF = s4.total_sf || mixTotals.total_sf || null
 
   const docs = scenario.source_documents || scenario.docs || []
 
@@ -707,10 +741,12 @@ function ScenarioDetailDrawer({ scenario, sources, onClose }) {
                 <thead>
                   <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
                     <th className="py-1.5 pr-3">Type</th>
-                    <th className="py-1.5 pr-3">Count</th>
-                    <th className="py-1.5 pr-3">Avg SF</th>
-                    <th className="py-1.5 pr-3">Avg Rent</th>
-                    <th className="py-1.5 pr-3">Rent/SF</th>
+                    <th className="py-1.5 pr-3 text-right">Count</th>
+                    <th className="py-1.5 pr-3 text-right">Mix %</th>
+                    <th className="py-1.5 pr-3 text-right">Avg SF</th>
+                    <th className="py-1.5 pr-3 text-right">Avg Rent</th>
+                    <th className="py-1.5 pr-3 text-right">Rent/SF</th>
+                    <th className="py-1.5 pr-3 text-right">GPR / yr</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -718,69 +754,214 @@ function ScenarioDetailDrawer({ scenario, sources, onClose }) {
                     const t = u.type || u.unit_type || u.name
                     const ct = u.count ?? u.units
                     const sf = u.avg_sf ?? u.sf
-                    const rent = u.avg_rent ?? u.rent
-                    const rpsf = rent && sf ? (rent / sf).toFixed(2) : null
+                    const rent = u.avg_rent ?? u.rent ?? u.monthly_rent
+                    const rpsf = u.rent_psf ?? (rent && sf ? rent / sf : null)
+                    const mixPct = u.pct ?? (ct && mixTotals.count ? (ct / mixTotals.count) * 100 : null)
+                    const gprYr = (ct && rent) ? ct * rent * 12 : null
                     return (
                       <tr key={i} className="border-b border-cw-border/50">
                         <td className="py-1.5 pr-3 text-gray-200">{t}</td>
-                        <td className="py-1.5 pr-3">{ct}</td>
-                        <td className="py-1.5 pr-3">{sf ? sf.toLocaleString() : '—'}</td>
-                        <td className="py-1.5 pr-3">{rent ? `$${Math.round(rent).toLocaleString()}` : '—'}</td>
-                        <td className="py-1.5 pr-3 text-gray-400">{rpsf ? `$${rpsf}` : '—'}</td>
+                        <td className="py-1.5 pr-3 text-right">{ct}</td>
+                        <td className="py-1.5 pr-3 text-right text-gray-400">{mixPct != null ? `${Math.round(mixPct)}%` : '—'}</td>
+                        <td className="py-1.5 pr-3 text-right">{sf ? sf.toLocaleString() : '—'}</td>
+                        <td className="py-1.5 pr-3 text-right">{rent ? `$${Math.round(rent).toLocaleString()}` : '—'}</td>
+                        <td className="py-1.5 pr-3 text-right text-gray-400">{rpsf ? `$${Number(rpsf).toFixed(2)}` : '—'}</td>
+                        <td className="py-1.5 pr-3 text-right text-gray-400">{gprYr ? fmtMoneyM(gprYr) : '—'}</td>
                       </tr>
                     )
                   })}
+                  {/* Total / weighted-avg row */}
+                  <tr className="border-t-2 border-cw-border font-semibold">
+                    <td className="py-2 pr-3 text-gray-100">Total / Avg</td>
+                    <td className="py-2 pr-3 text-right">{mixTotals.count}</td>
+                    <td className="py-2 pr-3 text-right text-gray-400">100%</td>
+                    <td className="py-2 pr-3 text-right">{mixTotals.avg_sf ? Math.round(mixTotals.avg_sf).toLocaleString() : '—'}</td>
+                    <td className="py-2 pr-3 text-right">{mixTotals.avg_rent ? `$${Math.round(mixTotals.avg_rent).toLocaleString()}` : '—'}</td>
+                    <td className="py-2 pr-3 text-right text-gray-400">{mixTotals.rent_psf ? `$${mixTotals.rent_psf.toFixed(2)}` : '—'}</td>
+                    <td className="py-2 pr-3 text-right text-gray-200">{mixTotals.gpr_annual ? fmtMoneyM(mixTotals.gpr_annual) : '—'}</td>
+                  </tr>
                 </tbody>
               </table>
             ) : (
               <div className="text-xs text-gray-500 italic">No unit mix recorded.</div>
             )}
             <div className="text-xs text-gray-500 mt-2">
-              {s4.total_units && <>Total units: <span className="text-gray-300">{s4.total_units}</span></>}
-              {s4.gross_potential_rent && <> · GPR: <span className="text-gray-300">{fmtMoneyM(s4.gross_potential_rent)}</span></>}
-              {s4.avg_rent_per_unit && <> · Avg rent: <span className="text-gray-300">${Math.round(s4.avg_rent_per_unit).toLocaleString()}/u</span></>}
+              {totalSF && <>Total SF: <span className="text-gray-300">{Math.round(totalSF).toLocaleString()}</span></>}
+              {(s4.gpr_annual || s4.gross_potential_rent) && <> · GPR: <span className="text-gray-300">{fmtMoneyM(s4.gpr_annual ?? s4.gross_potential_rent)}/yr</span></>}
+              {s4.avg_rent && <> · Avg rent: <span className="text-gray-300">${Math.round(s4.avg_rent).toLocaleString()}/u/mo</span></>}
+              {s4.avg_unit_sf && <> · Avg unit SF: <span className="text-gray-300">{Math.round(s4.avg_unit_sf).toLocaleString()}</span></>}
             </div>
           </Section>
 
-          {/* NOI */}
+          {/* NOI — reads multiple schema variants; vacancy_pct can be stored
+              as whole number (6.0 meaning 6%) — normPct handles it. */}
           <Section title="NOI Underwriting" icon={Calculator}>
-            <KVTable rows={[
-              ['Gross Potential Rent', fmtMoneyM(s5.gpr ?? s5.gross_potential_rent)],
-              ['Vacancy / Credit Loss', fmtPct(s5.vacancy_rate ?? s5.vacancy)],
-              ['Other Income', fmtMoneyM(s5.other_income)],
-              ['Effective Gross Income', fmtMoneyM(s5.egi ?? s5.effective_gross_income)],
-              ['Total Operating Expenses', fmtMoneyM(s5.total_opex ?? s5.operating_expenses)],
-              ['Opex / unit', s5.opex_per_unit ? fmtMoney(s5.opex_per_unit) : null],
-              ['Expense Ratio', fmtPct(s5.expense_ratio)],
-              ['Stabilized NOI', <span className="font-semibold text-emerald-300">{fmtMoneyM(s5.noi ?? s5.stabilized_noi)}</span>],
-            ]} />
+            {(() => {
+              const gpr = s5.gpr ?? s5.gross_potential_rent
+              // vacancy rate — try every variant; normalize
+              const vacRate = normPct(s5.vacancy_rate ?? s5.vacancy ?? s5.vacancy_pct ?? s5.rent_assumptions?.vacancy_rate)
+              const vacLossDollars = (vacRate != null && gpr != null) ? gpr * vacRate : null
+              const oi = s5.other_income
+              const oiPct = s5.other_income_pct ?? s5.other_income_pct_of_gpr
+              const concessions = s5.concessions
+              const egi = s5.egi ?? s5.effective_gross_income
+              const oe = s5.operating_expenses || {}
+              const totalOpex = s5.total_opex ?? s5.operating_expenses_total ?? oe.total_opex
+              const mgmtPct = normPct(s5.property_mgmt_pct ?? oe.property_mgmt_pct_egi ?? oe.management_fee_rate)
+              const noi = s5.noi ?? s5.stabilized_noi ?? s5.noi_total
+              const opexPerUnit = s5.opex_per_unit ?? (totalOpex && units ? totalOpex / units : null)
+              const expenseRatio = s5.expense_ratio ?? s5.opex_ratio ?? (totalOpex && egi ? totalOpex / egi : null)
+              return (
+                <KVTable rows={[
+                  ['Gross Potential Rent', gpr ? `${fmtMoneyM(gpr)} / yr` : '—'],
+                  ['Vacancy (rate)', vacRate != null ? `${(vacRate * 100).toFixed(2)}%` : '—'],
+                  ['Vacancy loss ($)', vacLossDollars != null ? `(${fmtMoneyM(vacLossDollars)})` : null],
+                  ['Concessions', concessions ? `(${fmtMoneyM(concessions)})` : null],
+                  ['Other Income', oi ? `${fmtMoneyM(oi)}${oiPct ? ` (${(normPct(oiPct) * 100).toFixed(1)}% of GPR)` : ''}` : null],
+                  ['Effective Gross Income', egi ? `${fmtMoneyM(egi)} / yr` : '—'],
+                  ['Management fee', mgmtPct != null ? `${(mgmtPct * 100).toFixed(2)}% of EGI` : null],
+                  ['Total Operating Expenses', totalOpex ? fmtMoneyM(totalOpex) : '—'],
+                  ['Opex / unit', opexPerUnit ? fmtMoney(opexPerUnit) : null],
+                  ['Expense Ratio', expenseRatio != null ? `${(expenseRatio * 100).toFixed(1)}%` : null],
+                  ['Stabilized NOI', <span className="font-semibold text-emerald-300">{fmtMoneyM(noi)}</span>],
+                  ['NOI / unit', (noi && units) ? fmtMoney(noi / units) : null],
+                ]} />
+              )
+            })()}
           </Section>
 
-          {/* Dev costs */}
+          {/* Dev costs — full line-item table with per-unit and per-SF columns */}
           <Section title="Development Budget" icon={Building2}>
-            <KVTable rows={[
-              ['Land', fmtMoneyM(s6.land?.total ?? s6.land_cost)],
-              ['Hard Costs', fmtMoneyM(s6.hard_costs?.total ?? s6.hard_costs)],
-              ['Soft Costs', fmtMoneyM(s6.soft_costs?.total ?? s6.soft_costs)],
-              ['Contingency', fmtMoneyM(s6.contingency?.total ?? s6.contingency)],
-              ['Financing Costs', fmtMoneyM(s6.financing_costs?.total ?? s6.financing_costs)],
-              ['Total Dev Cost', <span className="font-semibold text-emerald-300">{fmtMoneyM(tdc)}</span>],
-              ['TDC / unit', units && tdc ? fmtMoney(tdc / units) : null],
-            ]} />
+            {(() => {
+              const tSF = totalSF  // computed above from s4.total_sf or unit-mix aggregate
+              // Each row: [label, total, optional explicit per_unit, optional explicit per_sf]
+              // If per-unit / per-sf are null, we derive from total/units/totalSF.
+              const rows = [
+                ['Land',                    s6.land?.total ?? s6.land_cost,                           s6.land_per_unit, null, s6.land_per_acre != null ? `$${Math.round(s6.land_per_acre).toLocaleString()}/ac` : null],
+                ['Hard Costs',              s6.hard_costs?.total ?? s6.hard_cost_total,               s6.hard_cost_per_unit, s6.hard_cost_per_sf],
+                ['  Site Work',             s6.site_work],
+                ['  Amenity Package',       s6.amenity_package],
+                ['Soft Costs',              s6.soft_costs?.total ?? s6.soft_cost_total,               s6.soft_cost_per_unit, null, s6.soft_cost_pct_hard != null ? `${s6.soft_cost_pct_hard}% of hard` : null],
+                ['  Arch + Engineering',    s6.arch_engineering],
+                ['  Permits + Impact Fees', s6.permits_impact_fees,                                   s6.permits_impact_fees_per_unit],
+                ['  Legal',                 s6.legal],
+                ['  Marketing / Lease-up',  s6.marketing_leaseup,                                     s6.marketing_leaseup_per_unit],
+                ['  Developer Fee',         s6.developer_fee],
+                ['Carry / Proffers',        s6.carry_proffers,                                        s6.carry_proffers_per_unit],
+                ['Financing Costs',         s6.financing_costs?.total ?? s6.financing_costs],
+                ['Contingency',             s6.contingency?.total ?? s6.contingency_total ?? s6.contingency, null, null, s6.contingency_pct != null ? `${s6.contingency_pct}%` : null],
+              ].filter(r => r[1] != null && r[1] !== 0 && r[1] !== '')
+              const derive = (v, div) => (v != null && div) ? v / div : null
+              return (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+                        <th className="py-1.5 pr-3">Line</th>
+                        <th className="py-1.5 pr-3 text-right">Total</th>
+                        <th className="py-1.5 pr-3 text-right">$/unit</th>
+                        <th className="py-1.5 pr-3 text-right">$/SF</th>
+                        <th className="py-1.5 pr-3 text-right">Note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(([label, total, pu, psf, note], i) => {
+                        const perUnit = pu ?? derive(total, units)
+                        const perSF   = psf ?? derive(total, tSF)
+                        const isSub   = typeof label === 'string' && label.startsWith('  ')
+                        return (
+                          <tr key={i} className="border-b border-cw-border/40">
+                            <td className={`py-1.5 pr-3 ${isSub ? 'text-gray-400 pl-3' : 'text-gray-200'}`}>{String(label).trim()}</td>
+                            <td className="py-1.5 pr-3 text-right">{fmtMoneyM(total)}</td>
+                            <td className="py-1.5 pr-3 text-right text-gray-400">{perUnit ? fmtMoney(perUnit) : '—'}</td>
+                            <td className="py-1.5 pr-3 text-right text-gray-400">{perSF ? `$${perSF.toFixed(2)}` : '—'}</td>
+                            <td className="py-1.5 pr-3 text-right text-gray-500 text-xs">{note || ''}</td>
+                          </tr>
+                        )
+                      })}
+                      <tr className="border-t-2 border-cw-border font-semibold">
+                        <td className="py-2 pr-3 text-gray-100">Total Dev Cost</td>
+                        <td className="py-2 pr-3 text-right text-emerald-300">{fmtMoneyM(tdc)}</td>
+                        <td className="py-2 pr-3 text-right text-gray-300">{(tdc && units) ? fmtMoney(tdc / units) : '—'}</td>
+                        <td className="py-2 pr-3 text-right text-gray-300">{(tdc && tSF) ? `$${(tdc / tSF).toFixed(2)}` : '—'}</td>
+                        <td className="py-2 pr-3 text-right"></td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
           </Section>
 
-          {/* Financing */}
+          {/* Financing — reads recommended_path + scenarios[] details */}
           <Section title="Financing" icon={Landmark}>
-            <KVTable rows={[
-              ['Program', s7.selected_program ?? s7.program ?? s7.path],
-              ['LTC', fmtPct(s7.ltc)],
-              ['LTV', fmtPct(s7.ltv)],
-              ['Loan Amount', fmtMoneyM(s7.loan_amount)],
-              ['Rate', fmtPct(s7.rate ?? s7.interest_rate)],
-              ['Amortization', s7.amortization_years ? `${s7.amortization_years} yrs` : null],
-              ['Annual Debt Service', fmtMoneyM(s7.annual_debt_service ?? s7.debt_service)],
-              ['Equity Required', fmtMoneyM(s7.equity_required ?? s7.equity)],
-            ]} />
+            {(() => {
+              const rec = s7.recommended_path || {}
+              const fsc = Array.isArray(s7.scenarios) ? s7.scenarios[0] : null
+              const construction = fsc?.construction_loan || {}
+              const perm = fsc?.permanent_loan || {}
+              const progName = rec.name ?? s7.selected_program ?? s7.program ?? s7.path ?? fsc?.path
+              // Prefer top-level rec for headline; fall back to scenarios[0] details
+              const ltv = rec.ltv ?? perm.ltv_pct ?? s7.ltv
+              const ltc = rec.ltc ?? construction.ltc_pct ?? s7.ltc
+              const rate = rec.interest_rate ?? rec.rate ?? perm.rate ?? s7.rate ?? s7.interest_rate
+              const loanAmt = rec.loan_amount ?? perm.loan_jtm_underwrite ?? construction.loan_amount ?? s7.loan_amount
+              const amort = rec.amortization_years ?? perm.amortization_years ?? s7.amortization_years
+              const io = rec.io_period_months ?? (perm.io_period_years ? perm.io_period_years * 12 : null)
+              const term = rec.loan_term_years ?? s7.loan_term_years
+              const ads = s7.annual_debt_service ?? s7.debt_service
+              const equity = s7.equity_required ?? s7.equity
+              return (
+                <>
+                  <KVTable rows={[
+                    ['Recommended Path', progName],
+                    ['LTV', fmtPct(ltv)],
+                    ['LTC', fmtPct(ltc)],
+                    ['Loan Amount', fmtMoneyM(loanAmt)],
+                    ['Rate', fmtPct(rate)],
+                    ['Amortization', amort ? `${amort} yrs` : null],
+                    ['IO Period', io ? `${io} mo` : null],
+                    ['Loan Term', term ? `${term} yrs` : null],
+                    ['Annual Debt Service', fmtMoneyM(ads)],
+                    ['Equity Required', fmtMoneyM(equity)],
+                  ]} />
+                  {(construction.loan_amount || perm.loan_jtm_underwrite || perm.rate) && (
+                    <div className="mt-4 grid md:grid-cols-2 gap-3">
+                      {(construction.loan_amount || construction.rate) && (
+                        <div className="bg-cw-dark/40 border border-cw-border rounded p-3">
+                          <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Construction Loan</div>
+                          <KVTable rows={[
+                            ['LTC', fmtPct(construction.ltc_pct)],
+                            ['Loan', fmtMoneyM(construction.loan_amount)],
+                            ['Rate', fmtPct(construction.rate)],
+                            ['Term', construction.term_months ? `${construction.term_months} mo` : null],
+                            ['Avg Draw', fmtPct(construction.avg_draw_pct)],
+                            ['Construction Interest', fmtMoneyM(construction.construction_interest)],
+                            ['Fees', fmtPct(construction.fees_pct)],
+                          ]} />
+                        </div>
+                      )}
+                      {(perm.rate || perm.loan_jtm_underwrite) && (
+                        <div className="bg-cw-dark/40 border border-cw-border rounded p-3">
+                          <div className="text-xs uppercase tracking-wide text-gray-500 mb-2">Permanent Loan</div>
+                          <KVTable rows={[
+                            ['LTV', fmtPct(perm.ltv_pct)],
+                            ['Rate', fmtPct(perm.rate)],
+                            ['Amortization', perm.amortization_years ? `${perm.amortization_years} yrs` : null],
+                            ['IO Period', perm.io_period_years ? `${perm.io_period_years} yrs` : null],
+                            ['Min DSCR', perm.min_dscr ? `${perm.min_dscr}x` : null],
+                            ['Loan (underwrite)', fmtMoneyM(perm.loan_jtm_underwrite)],
+                          ]} />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {rec.notes && (
+                    <div className="mt-3 text-xs text-gray-400 italic whitespace-pre-wrap">{rec.notes}</div>
+                  )}
+                </>
+              )
+            })()}
           </Section>
 
           {/* Step 9 Strategy */}
@@ -1641,6 +1822,81 @@ export default function DealDetail({ dealId, onBack }) {
 
       {/* Risk Assessment */}
       <RiskBadge risk={deal.risk} />
+
+      {/* Deal Terms & Provenance — asking price + broker + key dates. Reads
+          top-level flat columns first (legacy); falls back to provenance_data
+          JSON blob populated by the deal-provenance sub-skill. Always
+          renders (so "No asking price provided" is visible when absent). */}
+      {(() => {
+        const prov = parseMaybeJSON(deal.provenance_data) || {}
+        const broker = prov.broker || {}
+        const brokerName    = deal.broker_name    || broker.name
+        const brokerCompany = deal.broker_company || broker.company
+        const brokerEmail   = deal.broker_email   || broker.email
+        const brokerPhone   = deal.broker_phone   || broker.phone
+        const dListed    = deal.date_listed          || prov.listing_date
+        const dCfo       = deal.date_cfo             || prov.cfo_date
+        const dBestFinal = deal.date_best_final      || prov.best_and_final_date
+        const dLoiSub    = deal.date_loi_submitted   || prov.loi_submitted_date
+        const dLoiAcc    = deal.date_loi_accepted    || prov.loi_accepted_date
+        const dOM        = prov.om_received_date
+        const dateRow = (label, v) => v ? <div className="text-xs"><span className="text-gray-500">{label}</span> <span className="text-gray-200 font-mono ml-1">{v}</span></div> : null
+        return (
+          <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+            <div className="grid md:grid-cols-3 gap-4">
+              {/* Asking price */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Asking Price</div>
+                {deal.asking_price ? (
+                  <>
+                    <div className="text-2xl font-bold text-white">{fmtMoney(deal.asking_price)}</div>
+                    {deal.asking_price_basis && (
+                      <div className="text-xs text-gray-500 mt-0.5">{deal.asking_price_basis}</div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-base text-gray-500 italic">No asking price provided</div>
+                )}
+              </div>
+              {/* Broker */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Broker</div>
+                {brokerName || brokerCompany ? (
+                  <div className="text-sm">
+                    {brokerName && <div className="text-gray-200 font-semibold">{brokerName}</div>}
+                    {brokerCompany && <div className="text-gray-300">{brokerCompany}</div>}
+                    <div className="text-xs text-gray-500 mt-0.5">
+                      {brokerEmail && <div>{brokerEmail}</div>}
+                      {brokerPhone && <div>{brokerPhone}</div>}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500 italic">Not populated — run deal-provenance skill</div>
+                )}
+              </div>
+              {/* Key dates */}
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Key Dates</div>
+                {(dListed || dOM || dCfo || dBestFinal || dLoiSub || dLoiAcc) ? (
+                  <div className="space-y-0.5">
+                    {dateRow('Listed',        dListed)}
+                    {dateRow('OM received',   dOM)}
+                    {dateRow('CFO',           dCfo)}
+                    {dateRow('Best & final',  dBestFinal)}
+                    {dateRow('LOI submitted', dLoiSub)}
+                    {dateRow('LOI accepted',  dLoiAcc)}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500 italic">Not populated — run deal-provenance skill</div>
+                )}
+              </div>
+            </div>
+            {prov.last_scan_at && (
+              <div className="text-[10px] text-gray-600 mt-3">Last provenance scan: {prov.last_scan_at}</div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Map — satellite view with site + comps + employers when lat/lng are available */}
       {(() => {

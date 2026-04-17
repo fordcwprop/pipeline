@@ -17,6 +17,7 @@ const JSON_BLOB_FIELDS = new Set([
   'zoning_data',
   'site_data',
   'demographics_data',
+  'provenance_data',
   'market_data',
   'strategy_screen_data',
   'noi_data',
@@ -370,7 +371,8 @@ async function handleCreateDeal(request, env) {
     // Dev-agent step output blobs (JSON). Shape matches deal-state.json
     // sections from fordcwprop/dev-agent. Worker serializes objects to
     // JSON strings at write time; frontend parses them at read time.
-    'zoning_data', 'site_data', 'demographics_data', 'market_data', 'strategy_screen_data',
+    'zoning_data', 'site_data', 'demographics_data', 'provenance_data', 'market_data', 'strategy_screen_data',
+    'asking_price', 'asking_price_basis',
     'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
     // Scenarios (multi-model per deal) + narrative fields
     'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',
@@ -433,7 +435,8 @@ async function handleUpdateDeal(request, env, dealId) {
     // Dev-agent step output blobs (JSON). Shape matches deal-state.json
     // sections from fordcwprop/dev-agent. Worker serializes objects to
     // JSON strings at write time; frontend parses them at read time.
-    'zoning_data', 'site_data', 'demographics_data', 'market_data', 'strategy_screen_data',
+    'zoning_data', 'site_data', 'demographics_data', 'provenance_data', 'market_data', 'strategy_screen_data',
+    'asking_price', 'asking_price_basis',
     'noi_data', 'dev_cost_data', 'financing_data', 'returns_data', 'strategy_data',
     // Scenarios (multi-model per deal) + narrative fields
     'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',

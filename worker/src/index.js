@@ -377,7 +377,9 @@ async function handleCreateDeal(request, env) {
     // Scenarios (multi-model per deal) + narrative fields
     'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',
     // Hybrid acq+dev phase breakdown (see migrations/004_phase_context.sql)
-    'phase_context'
+    'phase_context',
+    // GIS portal URL (county parcel viewer), editable from deal header
+    'gis_url'
   ];
 
   const setCols = ['id'];
@@ -441,7 +443,9 @@ async function handleUpdateDeal(request, env, dealId) {
     // Scenarios (multi-model per deal) + narrative fields
     'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',
     // Hybrid acq+dev phase breakdown (see migrations/004_phase_context.sql)
-    'phase_context'
+    'phase_context',
+    // GIS portal URL (county parcel viewer), editable from deal header
+    'gis_url'
   ];
 
   const sets = [];

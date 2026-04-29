@@ -1,69 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../api'
 import { ArrowLeft, Star, Save, AlertTriangle, CheckCircle, XCircle, TrendingUp, Building2, DollarSign, Calendar, Edit3, Shield, FileText, Users, Clock, MapPin, ChevronDown, ChevronRight, Map, LineChart, Home, Calculator, Landmark, Target, Briefcase } from 'lucide-react'
-import SiteMap from '../components/SiteMap'
-
-// Pull lat/lng + comps + employers + hot/cold nearby areas from whichever step
-// blobs have them. Each source is defensive: missing blob → empty contribution.
-function buildMapPropsFromDeal(deal) {
-  const parse = (v) => {
-    if (v == null) return null
-    if (typeof v !== 'string') return v
-    try { return JSON.parse(v) } catch { return null }
-  }
-  const demo = parse(deal.demographics_data) || {}
-  const market = parse(deal.market_data) || {}
-  const site_geo = demo.site_geo || {}
-  if (typeof site_geo.latitude !== 'number' || typeof site_geo.longitude !== 'number') return null
-
-  const comps = []
-  const rentComps = market.rent_comps || market.comps || market.achievable_rents?.comps
-  if (Array.isArray(rentComps)) {
-    rentComps.forEach(c => {
-      if (!c) return
-      const lat = c.lat ?? c.latitude
-      const lng = c.lng ?? c.longitude ?? c.lon
-      if (typeof lat === 'number' && typeof lng === 'number') {
-        comps.push({
-          lat, lng,
-          label: c.property || c.name || c.address || 'Comp',
-          rent: c.rent || c.avg_rent || c.asking_rent,
-          sf:   c.sf   || c.avg_sf   || c.avg_unit_sf,
-        })
-      }
-    })
-  }
-
-  const employers = []
-  const majorEmployers = market.msa_major_employers
-  if (Array.isArray(majorEmployers)) {
-    majorEmployers.forEach(e => {
-      if (!e) return
-      const lat = e.lat ?? e.latitude
-      const lng = e.lng ?? e.longitude
-      if (typeof lat === 'number' && typeof lng === 'number') {
-        employers.push({
-          lat, lng,
-          label: e.name || e.employer || 'Employer',
-          employees: e.employees || e.size,
-        })
-      }
-    })
-  }
-
-  return {
-    site: {
-      lat: site_geo.latitude,
-      lng: site_geo.longitude,
-      label: deal.name || deal.address || 'Subject site',
-    },
-    comps,
-    employers,
-    amenities: [],
-    hotSpots: [],
-    coldSpots: [],
-  }
-}
+// SiteMap removed: react-leaflet@5 requires React 19; project uses React 18
+function buildMapPropsFromDeal() { return null }
 
 const STATUSES = ['sourced', 'under_review', 'modeled', 'shortlisted', 'under_contract', 'closed', 'killed', 'dead']
 
@@ -2003,25 +1942,6 @@ export default function DealDetail({ dealId, onBack }) {
         )
       })()}
 
-      {/* Map — satellite view with site + comps + employers when lat/lng are available */}
-      {(() => {
-        const mp = buildMapPropsFromDeal(deal)
-        if (!mp) return null
-        return (
-          <div className="bg-cw-card border border-cw-border rounded-xl p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <MapPin className="w-4 h-4 text-gray-400" />
-              <h3 className="text-sm font-semibold text-gray-400">Site Map</h3>
-              <span className="ml-auto text-xs text-gray-500">
-                {mp.comps.length > 0 && `${mp.comps.length} comps · `}
-                {mp.employers.length > 0 && `${mp.employers.length} employers · `}
-                satellite
-              </span>
-            </div>
-            <SiteMap {...mp} />
-          </div>
-        )
-      })()}
 
       {/* Phase Breakdown — hybrid acq+dev deals only; renders nothing otherwise */}
       <PhaseBreakdownCard data={deal.phase_context} />

@@ -493,6 +493,522 @@ function Section({ title, children, icon: Icon }) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// RentCompsCard — renders market_data.rent_comps as a comparable table.
+// Handles both the old shape (rents: {1br, 2br, 3br}) and flat shape.
+// Shows: name · year/class · units · distance · 1BR/2BR/3BR rents · source.
+// Returns null for deals with no rent comp data.
+// ────────────────────────────────────────────────────────────────
+function RentCompsCard({ data }) {
+  const market = (() => {
+    if (data == null) return null
+    if (typeof data !== 'string') return data
+    try { return JSON.parse(data) } catch { return null }
+  })()
+  const comps = market?.rent_comps || market?.comps
+  if (!Array.isArray(comps) || comps.length === 0) return null
+
+  const fmtMoney = (v) => (v || v === 0) ? `$${Math.round(v).toLocaleString()}` : '—'
+  const rentCell = (r, key) => {
+    if (!r) return '—'
+    const direct = r[key]
+    if (typeof direct === 'number') return fmtMoney(direct)
+    if (direct && typeof direct === 'object' && direct.rent != null) return fmtMoney(direct.rent)
+    return '—'
+  }
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <LineChart className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Rent Comps</h3>
+        <span className="ml-auto text-xs text-gray-500">{comps.length} comp{comps.length === 1 ? '' : 's'}</span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+              <th className="py-1.5 pr-3">Property</th>
+              <th className="py-1.5 pr-3">Year</th>
+              <th className="py-1.5 pr-3 text-right">Units</th>
+              <th className="py-1.5 pr-3">Product</th>
+              <th className="py-1.5 pr-3 text-right">Dist</th>
+              <th className="py-1.5 pr-3 text-right">1BR</th>
+              <th className="py-1.5 pr-3 text-right">2BR</th>
+              <th className="py-1.5 pr-3 text-right">3BR</th>
+              <th className="py-1.5 pr-3 text-right">Avg</th>
+              <th className="py-1.5 pr-3">Source</th>
+            </tr>
+          </thead>
+          <tbody>
+            {comps.map((c, i) => {
+              const r = c.rents || {}
+              const dist = c.distance_miles ?? c.proximity_miles ?? c.miles
+              return (
+                <tr key={i} className="border-b border-cw-border/40">
+                  <td className="py-1.5 pr-3 text-gray-200">
+                    {c.name || c.property || '—'}
+                    {c.class && <span className="ml-1 text-[10px] text-gray-500">Cl {c.class}</span>}
+                    {c.note && <div className="text-[11px] text-gray-500 mt-0.5">{c.note}</div>}
+                  </td>
+                  <td className="py-1.5 pr-3 text-gray-400">{c.year_built || '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{c.units || c.total_units || '—'}</td>
+                  <td className="py-1.5 pr-3 text-gray-400 text-xs">{c.product || c.product_type || '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{dist != null ? `${dist} mi` : '—'}</td>
+                  <td className="py-1.5 pr-3 text-right">{rentCell(r, '1br')}</td>
+                  <td className="py-1.5 pr-3 text-right">{rentCell(r, '2br')}</td>
+                  <td className="py-1.5 pr-3 text-right">{rentCell(r, '3br')}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{r.avg ? fmtMoney(r.avg) : '—'}</td>
+                  <td className="py-1.5 pr-3 text-[11px] text-gray-500">{c.source || '—'}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
+// MarketContextCard — submarket vacancy, cap rate, pipeline, and sales
+// comps. Reads from market_data. Returns null for deals that haven't run
+// step_3 or that have no submarket metrics.
+// ────────────────────────────────────────────────────────────────
+function MarketContextCard({ data }) {
+  const market = (() => {
+    if (data == null) return null
+    if (typeof data !== 'string') return data
+    try { return JSON.parse(data) } catch { return null }
+  })()
+  if (!market) return null
+  const vac   = market.submarket_vacancy_pct ?? market.submarket_vacancy
+  const cap   = market.submarket_cap_rate ?? market.market_cap_rate
+  const uc    = market.units_under_construction
+  const sales = market.sales_comps || market.sale_comps
+  const hasAny = vac != null || cap != null || uc != null || (Array.isArray(sales) && sales.length > 0)
+  if (!hasAny) return null
+
+  const fmtPct = (v) => v != null ? `${(v < 1 ? v * 100 : v).toFixed(1)}%` : '—'
+  const fmtMoneyM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(1)}M` : '—'
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Market Context</h3>
+        {market.submarket && <span className="ml-auto text-xs text-gray-500">{market.submarket}</span>}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard label="Submarket Vacancy" value={fmtPct(vac)} warn={vac != null && vac >= 7} />
+        <MetricCard label="Market Cap Rate" value={fmtPct(cap)} />
+        <MetricCard label="Units Under Construction" value={uc != null ? uc.toLocaleString() : '—'} />
+        <MetricCard label="MSA Pop (K)" value={market.msa_population ? `${(market.msa_population / 1000).toFixed(0)}K` : '—'} sub={market.msa_pop_growth_pct ? `+${market.msa_pop_growth_pct.toFixed(2)}%/yr` : null} />
+      </div>
+
+      {market.submarket_vacancy_note && (
+        <div className="text-[11px] text-gray-500 italic">{market.submarket_vacancy_note}</div>
+      )}
+      {market.pipeline_note && (
+        <div className="text-[11px] text-gray-500 italic">{market.pipeline_note}</div>
+      )}
+
+      {Array.isArray(sales) && sales.length > 0 && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2 mt-2">Sales Comps</div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+                <th className="py-1.5 pr-3">Property</th>
+                <th className="py-1.5 pr-3">Year</th>
+                <th className="py-1.5 pr-3 text-right">Units</th>
+                <th className="py-1.5 pr-3">Sale Date</th>
+                <th className="py-1.5 pr-3 text-right">Price</th>
+                <th className="py-1.5 pr-3 text-right">$/Unit</th>
+                <th className="py-1.5 pr-3 text-right">Implied Cap</th>
+                <th className="py-1.5 pr-3">Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sales.map((s, i) => (
+                <tr key={i} className="border-b border-cw-border/40">
+                  <td className="py-1.5 pr-3 text-gray-200">{s.name || s.property || '—'}</td>
+                  <td className="py-1.5 pr-3 text-gray-400">{s.year_built || '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{s.units || '—'}</td>
+                  <td className="py-1.5 pr-3 text-gray-400">{s.sale_date || '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-300">{fmtMoneyM(s.sale_price)}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{s.price_per_unit ? `$${Math.round(s.price_per_unit).toLocaleString()}` : '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{s.implied_cap_rate != null ? fmtPct(s.implied_cap_rate) : '—'}</td>
+                  <td className="py-1.5 pr-3 text-[11px] text-gray-500">{s.source || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {Array.isArray(market.data_sources) && market.data_sources.length > 0 && (
+        <div className="text-[11px] text-gray-600 pt-2 border-t border-cw-border/40">
+          Sources: {market.data_sources.join(' · ')}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
+// TaxCompsCard — renders property tax analysis from noi_data:
+//   (1) effective rate summary (method, jurisdiction, ratio, millage, $/unit)
+//   (2) comp table (appraised, assessed, per-unit, jurisdiction, sale) when
+//       noi_data.tax_comps is a structured array; falls back to string list.
+// Returns null when no tax data is present.
+// ────────────────────────────────────────────────────────────────
+function TaxCompsCard({ data }) {
+  const noi = (() => {
+    if (data == null) return null
+    if (typeof data !== 'string') return data
+    try { return JSON.parse(data) } catch { return null }
+  })()
+  const oe = noi?.operating_expenses || {}
+  const loc = noi?.locality || oe.locality || {}
+  const method = oe.property_tax_method || noi?.property_tax_method
+  const perUnit = oe.property_tax_per_unit
+  const total = oe.property_tax_total ?? oe.taxes_total
+  const compsRaw = noi?.tax_comps || oe.tax_comps || oe.property_tax_comps
+  const comps = Array.isArray(compsRaw) ? compsRaw : null
+  const stringList = (Array.isArray(compsRaw) && compsRaw.every(c => typeof c === 'string')) ? compsRaw : null
+
+  if (!method && !perUnit && !total && !comps && !loc.jurisdiction) return null
+
+  const fmtMoney = (v) => (v || v === 0) ? `$${Math.round(v).toLocaleString()}` : '—'
+  const fmtMoneyM = (v) => (v || v === 0) ? `$${(v / 1e6).toFixed(2)}M` : '—'
+  const fmtPct = (v) => v != null ? `${(v < 1 ? v * 100 : v).toFixed(2)}%` : '—'
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <Landmark className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Property Tax Analysis</h3>
+        {(loc.jurisdiction || noi?.tax_comp_source) && (
+          <span className="ml-auto text-xs text-gray-500">
+            {loc.jurisdiction || noi?.tax_comp_source}
+          </span>
+        )}
+      </div>
+
+      {/* Summary row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <MetricCard label="Property Tax (annual)" value={fmtMoney(total)} />
+        <MetricCard label="Per Unit" value={fmtMoney(perUnit)} />
+        {loc.millage_rate != null && (
+          <MetricCard label="Millage" value={`${Number(loc.millage_rate).toFixed(1)} mills`} />
+        )}
+        {loc.assessment_ratio != null && (
+          <MetricCard label="Assessment Ratio" value={fmtPct(loc.assessment_ratio)} />
+        )}
+        {loc.effective_tax_rate_pct != null && (
+          <MetricCard label="Effective Rate" value={fmtPct(loc.effective_tax_rate_pct / 100)} sub="on market value" />
+        )}
+      </div>
+
+      {method && (
+        <div className="text-[11px] text-gray-500 italic">
+          <span className="uppercase tracking-wide text-gray-600 mr-1">Method:</span>{method}
+        </div>
+      )}
+
+      {comps && !stringList && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Tax Comps Used</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+                  <th className="py-1.5 pr-3">Property</th>
+                  <th className="py-1.5 pr-3">Year</th>
+                  <th className="py-1.5 pr-3 text-right">Units</th>
+                  <th className="py-1.5 pr-3 text-right">Appraised</th>
+                  <th className="py-1.5 pr-3 text-right">$/Unit</th>
+                  <th className="py-1.5 pr-3">Jurisdiction</th>
+                  <th className="py-1.5 pr-3 text-right">Sale Price</th>
+                  <th className="py-1.5 pr-3">Parcel(s)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {comps.map((c, i) => (
+                  <tr key={i} className="border-b border-cw-border/40">
+                    <td className="py-1.5 pr-3 text-gray-200">
+                      {c.property || c.name || '—'}
+                      {c.owner && <div className="text-[10px] text-gray-600">{c.owner}</div>}
+                    </td>
+                    <td className="py-1.5 pr-3 text-gray-400">{c.year_built || c.year || '—'}</td>
+                    <td className="py-1.5 pr-3 text-right text-gray-400">{c.units || '—'}</td>
+                    <td className="py-1.5 pr-3 text-right text-gray-300">{fmtMoneyM(c.appraised ?? c.appraised_value ?? c.assessed_value)}</td>
+                    <td className="py-1.5 pr-3 text-right text-gray-400">{c.per_unit ? fmtMoney(c.per_unit) : '—'}</td>
+                    <td className="py-1.5 pr-3 text-gray-400 text-xs">{c.jurisdiction || '—'}</td>
+                    <td className="py-1.5 pr-3 text-right text-gray-400">{c.sale_2026 || c.sale_price ? fmtMoneyM(c.sale_2026 || c.sale_price) : '—'}</td>
+                    <td className="py-1.5 pr-3 text-[10px] text-gray-600 font-mono">{c.parcel_id || c.parcels || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {stringList && (
+        <div>
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Tax Comps Used</div>
+          <ul className="text-sm text-gray-300 space-y-1">
+            {stringList.map((c, i) => <li key={i}>• {c}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* Closing taxes (state-level) — only when locality.deed_tax_rate_pct etc. populated */}
+      {(loc.deed_tax_rate_pct != null || loc.mortgage_tax_rate_pct != null) && (
+        <div className="pt-3 border-t border-cw-border/40">
+          <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Closing Tax Rates</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+            {loc.deed_tax_rate_pct != null && (
+              <div>
+                <div className="text-gray-500 text-xs">Deed / Grantor's Tax (seller)</div>
+                <div className="text-gray-200 font-medium">{fmtPct(loc.deed_tax_rate_pct / 100)} of sale price</div>
+                {loc.deed_tax_citation && <div className="text-[11px] text-gray-600">{loc.deed_tax_citation}</div>}
+              </div>
+            )}
+            {loc.mortgage_tax_rate_pct != null && (
+              <div>
+                <div className="text-gray-500 text-xs">Mortgage Recording Tax (borrower)</div>
+                <div className="text-gray-200 font-medium">{fmtPct(loc.mortgage_tax_rate_pct / 100)} of loan amount</div>
+                {loc.mortgage_tax_citation && <div className="text-[11px] text-gray-600">{loc.mortgage_tax_citation}</div>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
+// LocalityFeesCard — renders one-time / development fees for the
+// jurisdiction: water tap, sewer connection, impact fees, proffers,
+// building permit, plan review, land disturbance, traffic. Reads from
+// dev_cost_data.locality_fees (preferred) or dev_cost_data.permits_impact_fees
+// detail. Returns null if no fee data is structured.
+// ────────────────────────────────────────────────────────────────
+function LocalityFeesCard({ data, units }) {
+  const dev = (() => {
+    if (data == null) return null
+    if (typeof data !== 'string') return data
+    try { return JSON.parse(data) } catch { return null }
+  })()
+  const fees = dev?.locality_fees || dev?.fees
+  if (!fees || typeof fees !== 'object') return null
+  const items = fees.items || (Array.isArray(fees) ? fees : null)
+  if (!Array.isArray(items) || items.length === 0) return null
+
+  const fmtMoney = (v) => (v || v === 0) ? `$${Math.round(v).toLocaleString()}` : '—'
+  const total = items.reduce((s, it) => s + (Number(it.total) || 0), 0)
+  const perUnit = (units && total) ? total / units : null
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <Landmark className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Locality Fees (One-Time Development Costs)</h3>
+        {fees.jurisdiction && <span className="ml-auto text-xs text-gray-500">{fees.jurisdiction}</span>}
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+              <th className="py-1.5 pr-3">Fee</th>
+              <th className="py-1.5 pr-3">Provider</th>
+              <th className="py-1.5 pr-3">Basis</th>
+              <th className="py-1.5 pr-3 text-right">Total</th>
+              <th className="py-1.5 pr-3 text-right">$/Unit</th>
+              <th className="py-1.5 pr-3">Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((it, i) => (
+              <tr key={i} className="border-b border-cw-border/40">
+                <td className="py-1.5 pr-3 text-gray-200">
+                  {it.label || it.name}
+                  {it.note && <div className="text-[11px] text-gray-500 mt-0.5">{it.note}</div>}
+                </td>
+                <td className="py-1.5 pr-3 text-gray-400 text-xs">{it.provider || '—'}</td>
+                <td className="py-1.5 pr-3 text-gray-400 text-xs">{it.basis || '—'}</td>
+                <td className="py-1.5 pr-3 text-right text-gray-300">{fmtMoney(it.total)}</td>
+                <td className="py-1.5 pr-3 text-right text-gray-400">{(it.total != null && units) ? fmtMoney(it.total / units) : '—'}</td>
+                <td className="py-1.5 pr-3 text-[11px]">
+                  {it.confidence === 'good' && <span className="text-green-400">good</span>}
+                  {it.confidence === 'estimate' && <span className="text-yellow-400">estimate</span>}
+                  {it.confidence === 'TODO' && <span className="text-orange-400">TODO</span>}
+                  {!it.confidence && <span className="text-gray-500">—</span>}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-cw-border font-semibold">
+              <td className="py-2 pr-3 text-gray-100" colSpan={3}>Total</td>
+              <td className="py-2 pr-3 text-right text-emerald-300">{fmtMoney(total)}</td>
+              <td className="py-2 pr-3 text-right text-gray-300">{perUnit ? fmtMoney(perUnit) : '—'}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      {Array.isArray(fees.source_urls) && fees.source_urls.length > 0 && (
+        <div className="text-[11px] text-gray-600 pt-2 border-t border-cw-border/40">
+          Sources: {fees.source_urls.map((u, i) => (
+            <a key={i} href={u} target="_blank" rel="noreferrer" className="text-cw-accent hover:underline ml-1">[{i + 1}]</a>
+          ))}
+        </div>
+      )}
+      {fees.last_verified && (
+        <div className="text-[10px] text-gray-600">Last verified: {fees.last_verified}</div>
+      )}
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
+// SensitivityCard — renders stress-test results from the primary
+// scenario in scenarios_data. Each sensitivity is one row showing the
+// stressed assumption, resulting YoC, bps vs hurdle, and verdict.
+// Returns null if the primary scenario has no sensitivities.
+// ────────────────────────────────────────────────────────────────
+function SensitivityCard({ scenarios }) {
+  const arr = (() => {
+    if (scenarios == null) return null
+    if (typeof scenarios !== 'string') return scenarios
+    try { return JSON.parse(scenarios) } catch { return null }
+  })()
+  if (!Array.isArray(arr) || arr.length === 0) return null
+
+  // Find the primary (non-archived) scenario
+  const primary = arr.find(s => s.primary && !s.archived) || arr.find(s => !s.archived)
+  if (!primary) return null
+
+  const sens = primary.sensitivities || primary.step_8_returns?.sensitivities
+  if (!sens || typeof sens !== 'object') return null
+
+  // Normalize: sens may be an object keyed by name, or an array
+  const rows = Array.isArray(sens) ? sens : Object.entries(sens).map(([key, v]) => ({ key, ...v }))
+  if (!rows.length) return null
+
+  const baseYoc = primary.yoc ?? primary.step_8_returns?.yield_on_cost
+  const hurdle = 0.065
+  const fmtPct = (v) => v != null ? `${(v < 1 ? v * 100 : v).toFixed(2)}%` : '—'
+  const labelOf = (k) => {
+    const map = {
+      insurance_500: 'Insurance @ $500/unit (vs benchmark)',
+      insurance_500_per_unit: 'Insurance @ $500/unit (vs benchmark)',
+      hc_plus_5pct: 'Hard costs +5%',
+      hard_costs_plus_5pct: 'Hard costs +5%',
+      vacancy_8pct: 'Vacancy 8% (vs 6% floor)',
+      rent_plus_50_per_unit: 'Rent +$50/unit/mo',
+    }
+    return map[k] || (k || '').replace(/_/g, ' ')
+  }
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4 mt-3">
+      <div className="flex items-center gap-2 mb-3">
+        <AlertTriangle className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Sensitivity Analysis (Primary Scenario)</h3>
+        {baseYoc != null && (
+          <span className="ml-auto text-xs text-gray-500">Base YoC: {fmtPct(baseYoc)} · Hurdle: {fmtPct(hurdle)}</span>
+        )}
+      </div>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-left text-xs text-gray-500 border-b border-cw-border">
+            <th className="py-1.5 pr-3">Stress Test</th>
+            <th className="py-1.5 pr-3 text-right">Stressed YoC</th>
+            <th className="py-1.5 pr-3 text-right">Δ vs Base</th>
+            <th className="py-1.5 pr-3 text-right">vs Hurdle</th>
+            <th className="py-1.5 pr-3 text-center">Verdict</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => {
+            const yoc = r.yoc
+            const delta = (baseYoc != null && yoc != null) ? (yoc - baseYoc) : null
+            const vsHurdle = (yoc != null) ? (yoc - hurdle) : null
+            const passing = vsHurdle != null && vsHurdle >= 0
+            return (
+              <tr key={i} className="border-b border-cw-border/40">
+                <td className="py-1.5 pr-3 text-gray-200">{labelOf(r.key) || labelOf(r.assumption)}</td>
+                <td className="py-1.5 pr-3 text-right text-gray-300">{fmtPct(yoc)}</td>
+                <td className="py-1.5 pr-3 text-right text-gray-500">{delta != null ? `${delta >= 0 ? '+' : ''}${(delta * 10000).toFixed(0)} bps` : '—'}</td>
+                <td className={`py-1.5 pr-3 text-right ${passing ? 'text-emerald-400' : 'text-red-400'}`}>
+                  {vsHurdle != null ? `${vsHurdle >= 0 ? '+' : ''}${(vsHurdle * 10000).toFixed(0)} bps` : '—'}
+                </td>
+                <td className="py-1.5 pr-3 text-center">
+                  {r.verdict === 'PASS' || passing
+                    ? <span className="text-[10px] uppercase tracking-wide bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded">PASS</span>
+                    : <span className="text-[10px] uppercase tracking-wide bg-red-500/20 text-red-300 px-2 py-0.5 rounded">FAIL</span>}
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
+// CorrectionNoticesBanner — yellow info bar at the top of the page when
+// recent material corrections have been applied. Reads from any of:
+//   deal.corrections (top-level array), or
+//   noi_data.corrections / market_data.corrections (per-section arrays).
+// Each correction: { date, kind, summary, before?, after? }
+// ────────────────────────────────────────────────────────────────
+function CorrectionNoticesBanner({ deal }) {
+  const collect = []
+  const tryArr = (v) => {
+    if (Array.isArray(v)) v.forEach(c => collect.push(c))
+  }
+  tryArr(deal.corrections)
+  for (const fld of ['noi_data', 'market_data', 'returns_data', 'dev_cost_data', 'scenarios_data']) {
+    let parsed = deal[fld]
+    if (typeof parsed === 'string') {
+      try { parsed = JSON.parse(parsed) } catch { parsed = null }
+    }
+    if (parsed && typeof parsed === 'object') tryArr(parsed.corrections)
+  }
+  if (collect.length === 0) return null
+
+  // Sort newest first
+  collect.sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+
+  return (
+    <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-xl p-4 space-y-2">
+      <div className="flex items-center gap-2">
+        <AlertTriangle className="w-4 h-4 text-yellow-400" />
+        <h3 className="text-sm font-semibold text-yellow-200">Correction Notices</h3>
+        <span className="ml-auto text-xs text-yellow-400">{collect.length} correction{collect.length === 1 ? '' : 's'} applied</span>
+      </div>
+      <ul className="space-y-1.5">
+        {collect.map((c, i) => (
+          <li key={i} className="text-sm text-yellow-100 flex gap-3">
+            <span className="text-yellow-400 font-mono text-xs shrink-0 w-24">{c.date || ''}</span>
+            <span className="text-yellow-300 font-medium uppercase text-[10px] tracking-wide shrink-0 w-20">{c.kind || ''}</span>
+            <span className="text-yellow-100 flex-1">{c.summary}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
 // Helpers: safe JSON parse, citation rendering, sources list
 // ────────────────────────────────────────────────────────────────
 
@@ -1192,6 +1708,7 @@ function ScenariosTable({ data, sources }) {
       <div className="text-xs text-gray-500 mt-3">
         Key Metrics above reflect the <span className="text-emerald-400">primary</span> scenario. Click a row to see unit mix, NOI, dev budget, financing, and strategy details.
       </div>
+      <SensitivityCard scenarios={scenarios} />
       {open && <ScenarioDetailDrawer scenario={open} sources={sources} onClose={() => setOpen(null)} />}
     </Section>
   )
@@ -1930,6 +2447,12 @@ export default function DealDetail({ dealId, onBack }) {
       {/* Risk Assessment */}
       <RiskBadge risk={deal.risk} />
 
+      {/* Correction notices — yellow banner when material revisions have been
+          applied (e.g. rent comp correction, tax assessment correction). Pulls
+          from any `corrections` array on the deal or its JSON sub-blobs.
+          Renders nothing if no corrections present. */}
+      <CorrectionNoticesBanner deal={deal} />
+
       {/* Deal Terms & Provenance — asking price + broker + key dates. Reads
           top-level flat columns first (legacy); falls back to provenance_data
           JSON blob populated by the deal-provenance sub-skill. Always
@@ -2145,6 +2668,8 @@ export default function DealDetail({ dealId, onBack }) {
         </StepBlock>
 
         <StepBlock n="3" title="Market & Rent Comps" icon={LineChart}>
+          <MarketContextCard data={deal.market_data} />
+          <RentCompsCard data={deal.market_data} />
           <StepSection title="Market output" icon={FileText} data={deal.market_data} stepKey="step_3_market" />
           {!deal.market_data && <p className="text-sm text-gray-600 italic">No market analysis yet.</p>}
         </StepBlock>
@@ -2192,6 +2717,7 @@ export default function DealDetail({ dealId, onBack }) {
             <MetricCard label="NOI / Unit" value={m.noi && deal.units ? fmtMoney(Math.round(m.noi / deal.units)) : '—'} />
             <MetricCard label="Going-in Cap" value={fmtPct(m.going_in_cap_rate)} />
           </div>
+          <TaxCompsCard data={deal.noi_data} />
           <StepSection title="NOI output" icon={FileText} data={deal.noi_data} stepKey="step_5_noi" />
         </StepBlock>
 
@@ -2204,6 +2730,7 @@ export default function DealDetail({ dealId, onBack }) {
             ['Price / Unit', fmtMoney(m.price_per_unit)],
             ['Price / SF', fmtMoney(m.price_per_sf)],
           ]} />
+          <LocalityFeesCard data={deal.dev_cost_data} units={deal.units} />
           <StepSection title="Dev-cost output" icon={FileText} data={deal.dev_cost_data} stepKey="step_6_dev_costs" />
         </StepBlock>
 

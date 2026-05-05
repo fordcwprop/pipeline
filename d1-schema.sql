@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS deals (
     -- outputs are mirrored to the scalar columns above so calculateMetrics
     -- reflects the current best case. base_case_summary and upside_path
     -- are free-form markdown narrative.
+    questions_for_jack TEXT,  -- pipeline command center: blocking + open questions captured from skill _contract
     scenarios_data TEXT,
     base_case_summary TEXT,
     upside_path TEXT,

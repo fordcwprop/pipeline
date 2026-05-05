@@ -12,6 +12,7 @@
 // them on read. Keep this list in sync with d1-schema.sql and the
 // fields/updatableFields arrays below.
 const JSON_BLOB_FIELDS = new Set([
+  'questions_for_jack',
   'unit_mix',
   'entitlement_data',
   'zoning_data',

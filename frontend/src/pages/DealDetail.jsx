@@ -1009,6 +1009,94 @@ function CorrectionNoticesBanner({ deal }) {
 }
 
 // ────────────────────────────────────────────────────────────────
+// QuestionsForJack — pipeline command-center panel rendering questions
+// captured by skills' _contract.questions_for_jack output. Renders at top
+// of the deal page (after CorrectionNoticesBanner). Color-coded:
+//   - Blocking questions → red
+//   - Open (non-blocking) → yellow
+//   - Answered → collapsed gray
+// Click a question to expand its context. Returns null if no questions.
+// ────────────────────────────────────────────────────────────────
+function QuestionsForJack({ questions }) {
+  const [expanded, setExpanded] = useState({})
+  if (!questions || questions.length === 0) return null
+
+  const blockers = questions.filter(q => q.blocks_downstream && !q.answered)
+  const open = questions.filter(q => !q.blocks_downstream && !q.answered)
+  const answered = questions.filter(q => q.answered)
+
+  const toggle = (i) => setExpanded(e => ({ ...e, [i]: !e[i] }))
+
+  const QuestionRow = ({ q, i, blocker }) => (
+    <div
+      className={`rounded-lg border p-3 cursor-pointer transition-colors ${
+        blocker
+          ? 'border-red-800 bg-red-900/20 hover:bg-red-900/30'
+          : q.answered
+          ? 'border-gray-800 bg-cw-dark opacity-60'
+          : 'border-yellow-800 bg-yellow-900/10 hover:bg-yellow-900/20'
+      }`}
+      onClick={() => toggle(i)}
+    >
+      <div className="flex items-start gap-2">
+        {blocker
+          ? <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          : q.answered
+          ? <CheckCircle className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+          : <HelpCircle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
+        }
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${blocker ? 'bg-red-900/50 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
+              {q.step}
+            </span>
+            {blocker && <span className="text-xs text-red-400 font-semibold">BLOCKS DOWNSTREAM</span>}
+          </div>
+          <p className={`text-sm mt-1 font-medium ${blocker ? 'text-red-200' : q.answered ? 'text-gray-500' : 'text-white'}`}>
+            {q.question}
+          </p>
+          {expanded[i] && q.context && (
+            <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{q.context}</p>
+          )}
+        </div>
+        <span className="text-gray-600 text-xs shrink-0">{expanded[i] ? 'â–²' : 'â–¼'}</span>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <HelpCircle className="w-4 h-4 text-yellow-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Questions for You</h3>
+        <div className="flex gap-1.5 ml-auto">
+          {blockers.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-red-900/50 text-red-300 font-medium">
+              {blockers.length} blocking
+            </span>
+          )}
+          {open.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-300 font-medium">
+              {open.length} open
+            </span>
+          )}
+          {answered.length > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500">
+              {answered.length} answered
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="space-y-2">
+        {blockers.map((q, i) => <QuestionRow key={`b${i}`} q={q} i={`b${i}`} blocker />)}
+        {open.map((q, i) => <QuestionRow key={`o${i}`} q={q} i={`o${i}`} blocker={false} />)}
+        {answered.map((q, i) => <QuestionRow key={`a${i}`} q={q} i={`a${i}`} blocker={false} />)}
+      </div>
+    </div>
+  )
+}
+
+// ────────────────────────────────────────────────────────────────
 // Helpers: safe JSON parse, citation rendering, sources list
 // ────────────────────────────────────────────────────────────────
 
@@ -2452,6 +2540,13 @@ export default function DealDetail({ dealId, onBack }) {
           from any `corrections` array on the deal or its JSON sub-blobs.
           Renders nothing if no corrections present. */}
       <CorrectionNoticesBanner deal={deal} />
+
+      {/* QuestionsForJack — top-of-page command center for blocking/open questions */}
+      {(() => {
+        let qs = deal.questions_for_jack
+        if (typeof qs === 'string') { try { qs = JSON.parse(qs) } catch { qs = null } }
+        return <QuestionsForJack questions={qs} />
+      })()}
 
       {/* Deal Terms & Provenance — asking price + broker + key dates. Reads
           top-level flat columns first (legacy); falls back to provenance_data

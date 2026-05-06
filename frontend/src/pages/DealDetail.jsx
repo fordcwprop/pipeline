@@ -2541,11 +2541,45 @@ export default function DealDetail({ dealId, onBack }) {
           Renders nothing if no corrections present. */}
       <CorrectionNoticesBanner deal={deal} />
 
-      {/* QuestionsForJack — top-of-page command center for blocking/open questions */}
+      {/* QuestionsForJack — top-of-page command center.
+          ARCHITECTURE: render-time aggregation. Questions live in each step blob's
+          _contract.questions_for_jack array (canonical source). This walks all step
+          blobs, normalizes string-vs-dict shapes, tags by source step, and renders.
+          See system/architecture.md "Pipeline display rule: render-time aggregation only". */}
       {(() => {
-        let qs = deal.questions_for_jack
-        if (typeof qs === 'string') { try { qs = JSON.parse(qs) } catch { qs = null } }
-        return <QuestionsForJack questions={qs} />
+        const STEP_FIELDS = [
+          'zoning_data', 'site_data', 'demographics_data', 'market_data',
+          'strategy_screen_data', 'noi_data', 'dev_cost_data', 'financing_data',
+          'returns_data', 'strategy_data', 'entitlement_data',
+        ]
+        const stepLabel = (f) => f.replace(/_data$/, '').replace(/_/g, ' ')
+        const aggregated = []
+        for (const f of STEP_FIELDS) {
+          let v = deal[f]
+          if (typeof v === 'string') { try { v = JSON.parse(v) } catch { continue } }
+          if (!v || typeof v !== 'object') continue
+          const qs = v._contract?.questions_for_jack
+          if (!Array.isArray(qs)) continue
+          const src = stepLabel(f)
+          for (const q of qs) {
+            // Normalize: older skills produce strings, newer ones produce dicts
+            if (typeof q === 'string') {
+              aggregated.push({ question: q, blocks_downstream: false, context: null, answered: false, source_step: src })
+            } else if (q && typeof q === 'object') {
+              aggregated.push({ ...q, source_step: q.source_step || src, answered: q.answered || false })
+            }
+          }
+        }
+        // Backward-compat: also include any top-level questions_for_jack (DB column legacy)
+        let topLevel = deal.questions_for_jack
+        if (typeof topLevel === 'string') { try { topLevel = JSON.parse(topLevel) } catch { topLevel = null } }
+        if (Array.isArray(topLevel)) {
+          for (const q of topLevel) {
+            if (typeof q === 'string') aggregated.push({ question: q, blocks_downstream: false, context: null, answered: false, source_step: 'top-level' })
+            else if (q && typeof q === 'object') aggregated.push({ ...q, source_step: q.source_step || 'top-level', answered: q.answered || false })
+          }
+        }
+        return <QuestionsForJack questions={aggregated} />
       })()}
 
       {/* Deal Terms & Provenance — asking price + broker + key dates. Reads

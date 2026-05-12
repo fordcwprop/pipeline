@@ -370,7 +370,7 @@ async function handleAnswerQuestion(request, env, dealId, questionId) {
   const clearing = !answer_text && !selected_choice;
 
   const existing = await env.DB.prepare(
-    'SELECT deal_id FROM deals WHERE id = ?'
+    'SELECT id FROM deals WHERE id = ?'
   ).bind(dealId).first();
   if (!existing) return errorResponse('Deal not found', 404);
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../api'
-import { ArrowLeft, Star, Save, AlertTriangle, CheckCircle, XCircle, TrendingUp, Building2, DollarSign, Calendar, Edit3, Shield, FileText, Users, Clock, MapPin, ChevronDown, ChevronRight, Map, LineChart, Home, Calculator, Landmark, Target, Briefcase, HelpCircle } from 'lucide-react'
+import { ArrowLeft, Star, Save, AlertTriangle, CheckCircle, XCircle, TrendingUp, Building2, DollarSign, Calendar, Edit3, Shield, FileText, Users, Clock, MapPin, ChevronDown, ChevronRight, Map, LineChart, Home, Calculator, Landmark, Target, Briefcase, HelpCircle, ShieldAlert } from 'lucide-react'
 // SiteMap removed: react-leaflet@5 requires React 19; project uses React 18
 function buildMapPropsFromDeal() { return null }
 
@@ -596,7 +596,7 @@ function MarketContextCard({ data }) {
       <div className="flex items-center gap-2">
         <TrendingUp className="w-4 h-4 text-gray-400" />
         <h3 className="text-sm font-semibold text-gray-400">Market Context</h3>
-        {market.submarket && <span className="ml-auto text-xs text-gray-500">{market.submarket}</span>}
+        {market.submarket && <span className="ml-auto text-xs text-gray-500">{typeof market.submarket === 'string' ? market.submarket : (market.submarket.submarket_name || market.submarket.name || null)}</span>}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

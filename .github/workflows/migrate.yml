@@ -1,0 +1,52 @@
+name: Apply D1 Migrations
+
+# Manual-only workflow that applies a single migration file from migrations/
+# against the pipeline-production D1 database. Use this when a commit adds a
+# new migration -- the deploy workflows do NOT auto-apply schema changes.
+#
+# How to run: Actions -> Apply D1 Migrations -> Run workflow -> pick the
+# migration filename -> Run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      migration:
+        description: 'Migration filename to apply (e.g. 009_question_answers.sql)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run? (print SQL only, do not execute)'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    name: Apply migration to pipeline-production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify migration file exists
+        run: |
+          if [ ! -f "migrations/${{ github.event.inputs.migration }}" ]; then
+            echo "::error::migrations/${{ github.event.inputs.migration }} not found"
+            exit 1
+          fi
+          echo "Will apply:"
+          echo "----"
+          cat "migrations/${{ github.event.inputs.migration }}"
+          echo "----"
+
+      - name: Apply migration (dry run)
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: echo "Dry-run mode -- no changes applied."
+
+      - name: Apply migration (live)
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ea21224737d86d6da54d6b78c173141b
+          workingDirectory: worker
+          command: d1 execute pipeline-production --remote --file=../migrations/${{ github.event.inputs.migration }}

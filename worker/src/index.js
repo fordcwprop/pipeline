@@ -339,7 +339,83 @@ async function handleGetDeal(request, env, dealId) {
     'SELECT * FROM activity_log WHERE deal_id = ? ORDER BY created_at DESC LIMIT 20'
   ).bind(dealId).all();
 
-  return jsonResponse({ ...deal, metrics, risk, activity: activity.results || [] });
+  // Attach question answers so the frontend can show Jack's prior responses
+  // alongside the derived questions_for_jack list. Keyed by question_id.
+  // Wrapped in try/catch so this endpoint stays healthy even if migration
+  // 009 hasn't been applied yet — answers just won't show until it runs.
+  let question_answers = {};
+  try {
+    const answers = await env.DB.prepare(
+      'SELECT question_id, step, answer_text, selected_choice, answered_by, answered_at, updated_at FROM question_answers WHERE deal_id = ?'
+    ).bind(dealId).all();
+    for (const row of (answers.results || [])) question_answers[row.question_id] = row;
+  } catch (e) {
+    if (!/no such table/i.test(e.message || '')) throw e;
+  }
+
+  return jsonResponse({ ...deal, metrics, risk, activity: activity.results || [], question_answers });
+}
+
+// Upsert an answer to a single question. The question itself is derived
+// client-side from the deal's step blobs; this endpoint just stores the
+// answer keyed by (deal_id, question_id). The orchestrator pulls these
+// back at the start of its next run on the deal (see deal-analyst SKILL.md).
+async function handleAnswerQuestion(request, env, dealId, questionId) {
+  const user = getUserFromRequest(request);
+  const body = await request.json().catch(() => ({}));
+  const { answer_text, selected_choice, question_text, step } = body || {};
+
+  // Allow empty body to mean "clear my answer"; otherwise require at least
+  // one of the two answer fields so we don't store empty rows.
+  const clearing = !answer_text && !selected_choice;
+
+  const existing = await env.DB.prepare(
+    'SELECT deal_id FROM deals WHERE id = ?'
+  ).bind(dealId).first();
+  if (!existing) return errorResponse('Deal not found', 404);
+
+  if (clearing) {
+    await env.DB.prepare(
+      'DELETE FROM question_answers WHERE deal_id = ? AND question_id = ?'
+    ).bind(dealId, questionId).run();
+  } else {
+    // Upsert: INSERT OR REPLACE preserves answered_at on update because the
+    // PK is (deal_id, question_id) and we don't bind a new answered_at.
+    // For first-time answers SQLite fills the CURRENT_TIMESTAMP default.
+    await env.DB.prepare(`
+      INSERT INTO question_answers (deal_id, question_id, step, question_text, answer_text, selected_choice, answered_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(deal_id, question_id) DO UPDATE SET
+        step = excluded.step,
+        question_text = excluded.question_text,
+        answer_text = excluded.answer_text,
+        selected_choice = excluded.selected_choice,
+        answered_by = excluded.answered_by,
+        updated_at = CURRENT_TIMESTAMP
+    `).bind(
+      dealId, questionId, step || null, question_text || null,
+      answer_text || null, selected_choice || null, user.email
+    ).run();
+  }
+
+  await env.DB.prepare(
+    'INSERT INTO activity_log (deal_id, action, details, user_email) VALUES (?, ?, ?, ?)'
+  ).bind(
+    dealId,
+    clearing ? 'question_answer_cleared' : 'question_answered',
+    JSON.stringify({ question_id: questionId, step, selected_choice }),
+    user.email
+  ).run();
+
+  return jsonResponse({ ok: true, deal_id: dealId, question_id: questionId, cleared: clearing });
+}
+
+// List all answers for a deal (used by orchestrator pull-answers step).
+async function handleListAnswers(request, env, dealId) {
+  const result = await env.DB.prepare(
+    'SELECT * FROM question_answers WHERE deal_id = ? ORDER BY updated_at DESC'
+  ).bind(dealId).all();
+  return jsonResponse({ deal_id: dealId, answers: result.results || [] });
 }
 
 async function handleCreateDeal(request, env) {
@@ -696,6 +772,14 @@ export default {
       // Stress test
       const stressMatch = path.match(/^\/api\/deals\/([^/]+)\/stress$/);
       if (stressMatch && method === 'GET') return handleStressTest(request, env, stressMatch[1]);
+
+      // Question answers — interactive Q&A flow with the orchestrator
+      const answerMatch = path.match(/^\/api\/deals\/([^/]+)\/questions\/([^/]+)\/answer$/);
+      if (answerMatch && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
+        return handleAnswerQuestion(request, env, answerMatch[1], answerMatch[2]);
+      }
+      const listAnswersMatch = path.match(/^\/api\/deals\/([^/]+)\/answers$/);
+      if (listAnswersMatch && method === 'GET') return handleListAnswers(request, env, listAnswersMatch[1]);
 
       return errorResponse('Not found', 404);
     } catch (err) {

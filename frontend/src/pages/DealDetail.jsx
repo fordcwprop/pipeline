@@ -1017,7 +1017,95 @@ function CorrectionNoticesBanner({ deal }) {
 //   - Answered → collapsed gray
 // Click a question to expand its context. Returns null if no questions.
 // ────────────────────────────────────────────────────────────────
-function QuestionsForJack({ questions }) {
+function AnswerForm({ q, dealId, onSaved }) {
+  const [choice, setChoice] = useState(q.answer?.selected_choice || '')
+  const [text, setText] = useState(q.answer?.answer_text || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const hasChoices = Array.isArray(q.choices) && q.choices.length > 0
+
+  const save = async (e) => {
+    e?.stopPropagation()
+    if (!choice && !text.trim()) { setError('Pick a choice or type an answer first.'); return }
+    setSaving(true); setError(null)
+    try {
+      await api.answerQuestion(dealId, q.id, {
+        answer_text: text.trim() || null,
+        selected_choice: choice || null,
+        question_text: q.question,
+        step: q.source_step || q.step || null,
+      })
+      onSaved?.()
+    } catch (err) {
+      setError(err.message || 'Save failed')
+    } finally { setSaving(false) }
+  }
+
+  const clear = async (e) => {
+    e?.stopPropagation()
+    setSaving(true); setError(null)
+    try {
+      await api.clearAnswer(dealId, q.id)
+      setChoice(''); setText('')
+      onSaved?.()
+    } catch (err) { setError(err.message || 'Clear failed') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-cw-border/40 space-y-2" onClick={e => e.stopPropagation()}>
+      {hasChoices && (
+        <div className="flex flex-col gap-1">
+          {q.choices.map((c, idx) => (
+            <label key={idx} className="flex items-start gap-2 text-xs text-gray-200 cursor-pointer hover:text-white">
+              <input
+                type="radio"
+                name={`q-${q.id}`}
+                value={typeof c === 'string' ? c : (c.value || c.label)}
+                checked={choice === (typeof c === 'string' ? c : (c.value || c.label))}
+                onChange={e => setChoice(e.target.value)}
+                className="mt-0.5"
+              />
+              <span>{typeof c === 'string' ? c : (c.label || c.value)}</span>
+            </label>
+          ))}
+        </div>
+      )}
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        placeholder={hasChoices ? 'Optional comment...' : 'Type your answer for Claude to pick up on the next run...'}
+        className="w-full bg-cw-dark border border-cw-border rounded p-2 text-xs text-gray-200 placeholder-gray-600 focus:border-cw-accent focus:outline-none resize-y min-h-[50px]"
+      />
+      <div className="flex items-center gap-2">
+        <button
+          onClick={save}
+          disabled={saving}
+          className="px-3 py-1 bg-cw-accent text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : (q.answer ? 'Update answer' : 'Save answer')}
+        </button>
+        {q.answer && (
+          <button
+            onClick={clear}
+            disabled={saving}
+            className="px-3 py-1 text-xs text-gray-400 hover:text-red-400"
+          >
+            Clear
+          </button>
+        )}
+        {error && <span className="text-xs text-red-400">{error}</span>}
+        {q.answer && !error && (
+          <span className="text-[10px] text-gray-500 ml-auto">
+            Answered {new Date(q.answer.updated_at + 'Z').toLocaleString()} by {q.answer.answered_by}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function QuestionsForJack({ questions, dealId, onAnswered }) {
   const [expanded, setExpanded] = useState({})
   if (!questions || questions.length === 0) return null
 
@@ -1033,7 +1121,7 @@ function QuestionsForJack({ questions }) {
         blocker
           ? 'border-red-800 bg-red-900/20 hover:bg-red-900/30'
           : q.answered
-          ? 'border-gray-800 bg-cw-dark opacity-60'
+          ? 'border-gray-800 bg-cw-dark'
           : 'border-yellow-800 bg-yellow-900/10 hover:bg-yellow-900/20'
       }`}
       onClick={() => toggle(i)}
@@ -1042,24 +1130,37 @@ function QuestionsForJack({ questions }) {
         {blocker
           ? <ShieldAlert className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
           : q.answered
-          ? <CheckCircle className="w-4 h-4 text-gray-500 shrink-0 mt-0.5" />
+          ? <CheckCircle className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
           : <HelpCircle className="w-4 h-4 text-yellow-400 shrink-0 mt-0.5" />
         }
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${blocker ? 'bg-red-900/50 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
-              {q.step}
+              {q.step || q.source_step}
             </span>
             {blocker && <span className="text-xs text-red-400 font-semibold">BLOCKS DOWNSTREAM</span>}
           </div>
-          <p className={`text-sm mt-1 font-medium ${blocker ? 'text-red-200' : q.answered ? 'text-gray-500' : 'text-white'}`}>
+          <p className={`text-sm mt-1 font-medium ${blocker ? 'text-red-200' : q.answered ? 'text-gray-300' : 'text-white'}`}>
             {q.question}
           </p>
+          {q.answered && q.answer && (
+            <div className="mt-1.5 text-xs">
+              {q.answer.selected_choice && (
+                <span className="inline-block px-1.5 py-0.5 rounded bg-green-900/40 text-green-300 mr-1.5">
+                  {q.answer.selected_choice}
+                </span>
+              )}
+              {q.answer.answer_text && <span className="text-gray-300 italic">"{q.answer.answer_text}"</span>}
+            </div>
+          )}
           {expanded[i] && q.context && (
             <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{q.context}</p>
           )}
+          {expanded[i] && (
+            <AnswerForm q={q} dealId={dealId} onSaved={onAnswered} />
+          )}
         </div>
-        <span className="text-gray-600 text-xs shrink-0">{expanded[i] ? 'â–²' : 'â–¼'}</span>
+        <span className="text-gray-600 text-xs shrink-0">{expanded[i] ? '▲' : '▼'}</span>
       </div>
     </div>
   )
@@ -2579,7 +2680,21 @@ export default function DealDetail({ dealId, onBack }) {
             else if (q && typeof q === 'object') aggregated.push({ ...q, source_step: q.source_step || 'top-level', answered: q.answered || false })
           }
         }
-        return <QuestionsForJack questions={aggregated} />
+        // Stamp a stable id on every question so answers can be persisted
+        // against (deal_id, question_id). Prefer the skill-emitted q.id;
+        // otherwise fall back to a deterministic fingerprint from step + text.
+        // Text changes will orphan answers — sub-skills must emit ids going forward.
+        const answersMap = deal.question_answers || {}
+        for (const q of aggregated) {
+          if (!q.id) q.id = `${q.source_step || 'unknown'}::${(q.question || '').slice(0, 200)}`
+          const a = answersMap[q.id]
+          if (a) {
+            q.answer = a
+            q.answered = true
+          }
+        }
+        const reload = () => { api.getDeal(deal.id).then(d => setDeal(d)).catch(console.error) }
+        return <QuestionsForJack questions={aggregated} dealId={deal.id} onAnswered={reload} />
       })()}
 
       {/* Deal Terms & Provenance — asking price + broker + key dates. Reads

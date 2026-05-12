@@ -44,6 +44,17 @@ export const api = {
   compareDeals: (ids) => apiFetch(`/api/deals/compare?ids=${ids.join(',')}`),
   stressTest: (id) => apiFetch(`/api/deals/${id}/stress`),
 
+  // Question answers — interactive Q&A round-trip with the orchestrator
+  answerQuestion: (dealId, questionId, body) =>
+    apiFetch(`/api/deals/${dealId}/questions/${encodeURIComponent(questionId)}/answer`, {
+      method: 'POST', body: JSON.stringify(body),
+    }),
+  clearAnswer: (dealId, questionId) =>
+    apiFetch(`/api/deals/${dealId}/questions/${encodeURIComponent(questionId)}/answer`, {
+      method: 'DELETE',
+    }),
+  listAnswers: (dealId) => apiFetch(`/api/deals/${dealId}/answers`),
+
   // Auth
   getMe: () => apiFetch('/api/me'),
 };

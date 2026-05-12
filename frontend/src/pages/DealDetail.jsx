@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../api'
-import { ArrowLeft, Star, Save, AlertTriangle, CheckCircle, XCircle, TrendingUp, Building2, DollarSign, Calendar, Edit3, Shield, FileText, Users, Clock, MapPin, ChevronDown, ChevronRight, Map, LineChart, Home, Calculator, Landmark, Target, Briefcase } from 'lucide-react'
+import { ArrowLeft, Star, Save, AlertTriangle, CheckCircle, XCircle, TrendingUp, Building2, DollarSign, Calendar, Edit3, Shield, FileText, Users, Clock, MapPin, ChevronDown, ChevronRight, Map, LineChart, Home, Calculator, Landmark, Target, Briefcase, HelpCircle } from 'lucide-react'
 // SiteMap removed: react-leaflet@5 requires React 19; project uses React 18
 function buildMapPropsFromDeal() { return null }
 

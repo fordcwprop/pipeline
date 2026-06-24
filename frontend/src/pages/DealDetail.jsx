@@ -507,14 +507,48 @@ function RentCompsCard({ data }) {
   const comps = market?.rent_comps || market?.comps
   if (!Array.isArray(comps) || comps.length === 0) return null
 
-  const fmtMoney = (v) => (v || v === 0) ? `$${Math.round(v).toLocaleString()}` : '—'
-  const rentCell = (r, key) => {
-    if (!r) return '—'
-    const direct = r[key]
-    if (typeof direct === 'number') return fmtMoney(direct)
-    if (direct && typeof direct === 'object' && direct.rent != null) return fmtMoney(direct.rent)
-    return '—'
+  const fmtMoney = (v) => (typeof v === 'number' && isFinite(v)) ? `$${Math.round(v).toLocaleString()}` : null
+
+  // Defensive accessors — different skills produce different field names. Each
+  // helper tries multiple shapes and falls back gracefully.
+  const getName = (c) => c.name || c.property || c.label || '—'
+  const getYear = (c) => c.year_built || c.year || c.built || c.vintage || null
+  const getUnits = (c) => c.units || c.total_units || c.unit_count || null
+  const getProduct = (c) => c.product || c.product_type || c.asset_class || c.class || null
+  const getDist = (c) => c.distance_miles ?? c.distance_mi ?? c.proximity_miles ?? c.miles ?? null
+  const getSource = (c) => c.source || c.source_url || c.note || ''
+  const getAddress = (c) => c.address || null
+  // Try to extract per-bedroom rent. Multiple shapes:
+  //   {rents: {1br: 1795, 2br: 2363, 3br: 2725, avg: 2264}}
+  //   {rents: {1br: {sf, rent, rent_psf}, ...}}
+  //   {asking_rent: 1850}  (single representative)
+  //   {asking_rent_from: 1700, asking_rent_to: 2200}  (range)
+  const getRent = (c, key) => {
+    const r = c.rents
+    if (r) {
+      const direct = r[key] ?? r[key.toUpperCase()] ?? r[key.toLowerCase()]
+      if (typeof direct === 'number') return fmtMoney(direct)
+      if (direct && typeof direct === 'object' && direct.rent != null) return fmtMoney(direct.rent)
+    }
+    return null
   }
+  const getAvgRent = (c) => {
+    const r = c.rents
+    if (r && (r.avg ?? r.average ?? r.blended) != null) return fmtMoney(r.avg ?? r.average ?? r.blended)
+    if (typeof c.asking_rent === 'number') return fmtMoney(c.asking_rent)
+    if (typeof c.avg_rent === 'number') return fmtMoney(c.avg_rent)
+    if (typeof c.blended_rent === 'number') return fmtMoney(c.blended_rent)
+    // Range fallback: "from–to"
+    if (c.asking_rent_from != null && c.asking_rent_to != null) {
+      return `${fmtMoney(c.asking_rent_from)}–${fmtMoney(c.asking_rent_to)}`
+    }
+    if (c.asking_rent_from != null) return `${fmtMoney(c.asking_rent_from)}+`
+    return null
+  }
+
+  // Detect whether ANY comp has per-bedroom data. If yes, show 1BR/2BR/3BR columns.
+  // If no, collapse to a single "Rent" column.
+  const hasBedroomBreakdown = comps.some(c => c.rents && (c.rents['1br'] || c.rents['2br'] || c.rents['3br']))
 
   return (
     <div className="bg-cw-card border border-cw-border rounded-xl p-4">
@@ -532,33 +566,48 @@ function RentCompsCard({ data }) {
               <th className="py-1.5 pr-3 text-right">Units</th>
               <th className="py-1.5 pr-3">Product</th>
               <th className="py-1.5 pr-3 text-right">Dist</th>
-              <th className="py-1.5 pr-3 text-right">1BR</th>
-              <th className="py-1.5 pr-3 text-right">2BR</th>
-              <th className="py-1.5 pr-3 text-right">3BR</th>
-              <th className="py-1.5 pr-3 text-right">Avg</th>
+              {hasBedroomBreakdown ? (
+                <>
+                  <th className="py-1.5 pr-3 text-right">1BR</th>
+                  <th className="py-1.5 pr-3 text-right">2BR</th>
+                  <th className="py-1.5 pr-3 text-right">3BR</th>
+                  <th className="py-1.5 pr-3 text-right">Avg</th>
+                </>
+              ) : (
+                <th className="py-1.5 pr-3 text-right">Rent</th>
+              )}
               <th className="py-1.5 pr-3">Source</th>
             </tr>
           </thead>
           <tbody>
             {comps.map((c, i) => {
-              const r = c.rents || {}
-              const dist = c.distance_miles ?? c.proximity_miles ?? c.miles
+              const dist = getDist(c)
+              const addr = getAddress(c)
+              const cls = c.class
               return (
                 <tr key={i} className="border-b border-cw-border/40">
                   <td className="py-1.5 pr-3 text-gray-200">
-                    {c.name || c.property || '—'}
-                    {c.class && <span className="ml-1 text-[10px] text-gray-500">Cl {c.class}</span>}
+                    {getName(c)}
+                    {cls && <span className="ml-1 text-[10px] text-gray-500">Cl {cls}</span>}
+                    {addr && <div className="text-[11px] text-gray-500 mt-0.5">{addr}</div>}
                     {c.note && <div className="text-[11px] text-gray-500 mt-0.5">{c.note}</div>}
+                    {c.role && <div className="text-[11px] text-gray-600 mt-0.5 italic">{c.role}</div>}
                   </td>
-                  <td className="py-1.5 pr-3 text-gray-400">{c.year_built || '—'}</td>
-                  <td className="py-1.5 pr-3 text-right text-gray-400">{c.units || c.total_units || '—'}</td>
-                  <td className="py-1.5 pr-3 text-gray-400 text-xs">{c.product || c.product_type || '—'}</td>
+                  <td className="py-1.5 pr-3 text-gray-400">{getYear(c) || '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{getUnits(c) || '—'}</td>
+                  <td className="py-1.5 pr-3 text-gray-400 text-xs">{getProduct(c) || '—'}</td>
                   <td className="py-1.5 pr-3 text-right text-gray-400">{dist != null ? `${dist} mi` : '—'}</td>
-                  <td className="py-1.5 pr-3 text-right">{rentCell(r, '1br')}</td>
-                  <td className="py-1.5 pr-3 text-right">{rentCell(r, '2br')}</td>
-                  <td className="py-1.5 pr-3 text-right">{rentCell(r, '3br')}</td>
-                  <td className="py-1.5 pr-3 text-right text-gray-400">{r.avg ? fmtMoney(r.avg) : '—'}</td>
-                  <td className="py-1.5 pr-3 text-[11px] text-gray-500">{c.source || '—'}</td>
+                  {hasBedroomBreakdown ? (
+                    <>
+                      <td className="py-1.5 pr-3 text-right">{getRent(c, '1br') || '—'}</td>
+                      <td className="py-1.5 pr-3 text-right">{getRent(c, '2br') || '—'}</td>
+                      <td className="py-1.5 pr-3 text-right">{getRent(c, '3br') || '—'}</td>
+                      <td className="py-1.5 pr-3 text-right text-gray-400">{getAvgRent(c) || '—'}</td>
+                    </>
+                  ) : (
+                    <td className="py-1.5 pr-3 text-right">{getAvgRent(c) || '—'}</td>
+                  )}
+                  <td className="py-1.5 pr-3 text-[11px] text-gray-500">{getSource(c) || '—'}</td>
                 </tr>
               )
             })}
@@ -569,10 +618,6 @@ function RentCompsCard({ data }) {
   )
 }
 
-// ────────────────────────────────────────────────────────────────
-// MarketContextCard — submarket vacancy, cap rate, pipeline, and sales
-// comps. Reads from market_data. Returns null for deals that haven't run
-// step_3 or that have no submarket metrics.
 // ────────────────────────────────────────────────────────────────
 function MarketContextCard({ data }) {
   const market = (() => {

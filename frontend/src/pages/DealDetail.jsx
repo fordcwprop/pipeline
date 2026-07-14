@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { marked } from 'marked'
 import { api } from '../api'
 import { ArrowLeft, Star, Save, AlertTriangle, CheckCircle, XCircle, TrendingUp, Building2, DollarSign, Calendar, Edit3, Shield, FileText, Users, Clock, MapPin, ChevronDown, ChevronRight, Map, LineChart, Home, Calculator, Landmark, Target, Briefcase, HelpCircle, ShieldAlert } from 'lucide-react'
 // SiteMap removed: react-leaflet@5 requires React 19; project uses React 18
@@ -1146,6 +1147,56 @@ function AnswerForm({ q, dealId, onSaved }) {
           </span>
         )}
       </div>
+    </div>
+  )
+}
+
+// Deal documents — the human-readable .md files from the deal folder
+// (deal-memo.md etc.), synced into the deal_documents JSON column so Jack
+// reads them here instead of GitHub. Filenames map to friendly tab labels.
+const DOC_LABELS = {
+  'deal-memo.md': 'Deal Memo',
+  'questions-for-jack.md': 'Questions for Jack',
+  'status.md': 'Run Status',
+}
+const DOC_ORDER = ['deal-memo.md', 'questions-for-jack.md', 'status.md']
+
+function DocumentsCard({ deal }) {
+  const [active, setActive] = useState(null)
+  let docs = deal.deal_documents
+  if (typeof docs === 'string') { try { docs = JSON.parse(docs) } catch { docs = null } }
+  if (!docs || typeof docs !== 'object') return null
+  const names = DOC_ORDER.filter(n => docs[n]).concat(
+    Object.keys(docs).filter(n => !DOC_ORDER.includes(n)))
+  if (names.length === 0) return null
+  const current = active && names.includes(active) ? active : names[0]
+
+  let html = ''
+  try {
+    html = marked.parse(fixMojibake(docs[current]) || '', { async: false })
+  } catch {
+    html = `<pre>${(docs[current] || '').replace(/</g, '&lt;')}</pre>`
+  }
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4 mt-4">
+      <div className="flex items-center gap-2 mb-3">
+        <FileText size={16} className="text-cw-green" />
+        <h3 className="text-white font-semibold">Documents</h3>
+      </div>
+      <div className="flex gap-2 mb-3 flex-wrap">
+        {names.map(n => (
+          <button key={n} onClick={() => setActive(n)}
+            className={`px-3 py-1 rounded-lg text-sm border transition-colors ${
+              n === current
+                ? 'bg-cw-green/15 border-cw-green text-cw-green'
+                : 'bg-cw-dark border-cw-border text-gray-400 hover:text-white'}`}>
+            {DOC_LABELS[n] || n}
+          </button>
+        ))}
+      </div>
+      <div className="md-doc bg-cw-dark rounded-lg p-4 overflow-x-auto"
+           dangerouslySetInnerHTML={{ __html: html }} />
     </div>
   )
 }
@@ -2752,6 +2803,9 @@ export default function DealDetail({ dealId, onBack }) {
         const reload = () => { api.getDeal(deal.id).then(d => setDeal(d)).catch(console.error) }
         return <QuestionsForJack questions={aggregated} dealId={deal.id} onAnswered={reload} />
       })()}
+
+      {/* Documents — deal-memo.md and friends, readable on the page */}
+      <DocumentsCard deal={deal} />
 
       {/* Deal Terms & Provenance — asking price + broker + key dates. Reads
           top-level flat columns first (legacy); falls back to provenance_data

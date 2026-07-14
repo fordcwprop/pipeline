@@ -10,3 +10,21 @@
 
 /* Smooth transitions */
 * { transition: background-color 0.15s ease, border-color 0.15s ease; }
+
+/* Rendered markdown documents (DocumentsCard) — dark-theme typography */
+.md-doc { color: #d1d5db; font-size: 0.875rem; line-height: 1.6; }
+.md-doc h1 { color: #fff; font-size: 1.25rem; font-weight: 700; margin: 0 0 0.75rem; }
+.md-doc h2 { color: #fff; font-size: 1.05rem; font-weight: 650; margin: 1.25rem 0 0.5rem; border-bottom: 1px solid #374151; padding-bottom: 0.25rem; }
+.md-doc h3 { color: #fff; font-size: 0.95rem; font-weight: 600; margin: 1rem 0 0.4rem; }
+.md-doc p { margin: 0 0 0.7rem; }
+.md-doc ul, .md-doc ol { margin: 0 0 0.7rem; padding-left: 1.4rem; }
+.md-doc li { margin-bottom: 0.25rem; }
+.md-doc strong { color: #fff; font-weight: 650; }
+.md-doc a { color: #34d399; text-decoration: underline; }
+.md-doc hr { border-color: #374151; margin: 1rem 0; }
+.md-doc table { border-collapse: collapse; margin: 0.5rem 0 1rem; font-variant-numeric: tabular-nums; }
+.md-doc th, .md-doc td { border: 1px solid #374151; padding: 0.35rem 0.6rem; text-align: left; }
+.md-doc th { color: #fff; background: rgba(255,255,255,0.04); }
+.md-doc code { background: rgba(255,255,255,0.08); padding: 0.1rem 0.3rem; border-radius: 4px; font-size: 0.8rem; }
+.md-doc pre { background: rgba(255,255,255,0.05); padding: 0.75rem; border-radius: 8px; overflow-x: auto; }
+.md-doc blockquote { border-left: 3px solid #374151; padding-left: 0.8rem; color: #9ca3af; margin: 0 0 0.7rem; }

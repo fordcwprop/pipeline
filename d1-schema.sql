@@ -79,6 +79,12 @@ CREATE TABLE IF NOT EXISTS deals (
     -- GIS portal URL (county parcel viewer), editable from deal header
     gis_url TEXT,
 
+    -- Deal documents: JSON object { "<filename>": "<markdown>" } of the
+    -- human-readable .md files from the deal folder (deal-memo.md,
+    -- questions-for-jack.md, status.md). Rendered by DocumentsCard so Jack
+    -- reads memos on the deal page, not GitHub. (migration 010)
+    deal_documents TEXT,
+
     -- Dev-agent step outputs (JSON blobs, one per underwriting step)
     -- Shape of each blob matches the corresponding deal-state.json section
     -- in the fordcwprop/dev-agent repo. See Dev Agent/system/architecture.md.

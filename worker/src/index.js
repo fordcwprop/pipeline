@@ -12,6 +12,7 @@
 // them on read. Keep this list in sync with d1-schema.sql and the
 // fields/updatableFields arrays below.
 const JSON_BLOB_FIELDS = new Set([
+  'deal_documents',
   'questions_for_jack',
   'unit_mix',
   'entitlement_data',
@@ -457,6 +458,8 @@ async function handleCreateDeal(request, env) {
     'phase_context',
     // Consolidated questions from step _contract blocks (sync-deal.py builds it)
     'questions_for_jack',
+    // Human-readable .md files from the deal folder (DocumentsCard)
+    'deal_documents',
     // GIS portal URL (county parcel viewer), editable from deal header
     'gis_url'
   ];
@@ -525,6 +528,8 @@ async function handleUpdateDeal(request, env, dealId) {
     'phase_context',
     // Consolidated questions from step _contract blocks (sync-deal.py builds it)
     'questions_for_jack',
+    // Human-readable .md files from the deal folder (DocumentsCard)
+    'deal_documents',
     // GIS portal URL (county parcel viewer), editable from deal header
     'gis_url'
   ];

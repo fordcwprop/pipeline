@@ -1234,11 +1234,22 @@ function QuestionsForJack({ questions, dealId, onAnswered }) {
             <span className={`text-xs px-1.5 py-0.5 rounded font-mono ${blocker ? 'bg-red-900/50 text-red-300' : 'bg-gray-800 text-gray-400'}`}>
               {q.step || q.source_step}
             </span>
-            {blocker && <span className="text-xs text-red-400 font-semibold">BLOCKS DOWNSTREAM</span>}
+            {blocker && <span className="text-xs text-red-400 font-semibold">MATERIAL ASSUMPTION</span>}
           </div>
           <p className={`text-sm mt-1 font-medium ${blocker ? 'text-red-200' : q.answered ? 'text-gray-300' : 'text-white'}`}>
             {q.question}
           </p>
+          {!q.answered && q.assumed_answer && (
+            <div className="mt-1.5 text-xs">
+              <span className="text-gray-500">Proceeding on:&nbsp;</span>
+              <span className="inline-block px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-300">
+                {q.assumed_answer}
+              </span>
+              {q.assumption_basis && (
+                <span className="text-gray-500 italic ml-1.5">— {q.assumption_basis}</span>
+              )}
+            </div>
+          )}
           {q.answered && q.answer && (
             <div className="mt-1.5 text-xs">
               {q.answer.selected_choice && (

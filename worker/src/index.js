@@ -455,6 +455,8 @@ async function handleCreateDeal(request, env) {
     'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',
     // Hybrid acq+dev phase breakdown (see migrations/004_phase_context.sql)
     'phase_context',
+    // Consolidated questions from step _contract blocks (sync-deal.py builds it)
+    'questions_for_jack',
     // GIS portal URL (county parcel viewer), editable from deal header
     'gis_url'
   ];
@@ -521,6 +523,8 @@ async function handleUpdateDeal(request, env, dealId) {
     'scenarios_data', 'base_case_summary', 'upside_path', 'sources_data',
     // Hybrid acq+dev phase breakdown (see migrations/004_phase_context.sql)
     'phase_context',
+    // Consolidated questions from step _contract blocks (sync-deal.py builds it)
+    'questions_for_jack',
     // GIS portal URL (county parcel viewer), editable from deal header
     'gis_url'
   ];
@@ -531,6 +535,13 @@ async function handleUpdateDeal(request, env, dealId) {
 
   for (const field of updatableFields) {
     if (body[field] !== undefined) {
+      // Never null a JSON blob column via PATCH: an explicit null here has
+      // only ever meant "sender has no data", not "erase the website's copy"
+      // (the 2026 corrupted-deal audits found nulled step payloads upstream).
+      // Erasing a blob requires a direct migration, not the API.
+      if (body[field] === null && JSON_BLOB_FIELDS.has(field) && deal[field] != null) {
+        continue;
+      }
       const val = JSON_BLOB_FIELDS.has(field) ? (typeof body[field] === 'string' ? body[field] : JSON.stringify(body[field])) : body[field];
       sets.push(`${field} = ?`);
       vals.push(val);

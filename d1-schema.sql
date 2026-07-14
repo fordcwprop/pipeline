@@ -67,6 +67,18 @@ CREATE TABLE IF NOT EXISTS deals (
     -- Entitlement data (JSON blob)
     entitlement_data TEXT,
 
+    -- Asking price (seller/broker ask — distinct from purchase_price, which
+    -- for development deals is TDC). Added by migration; folded back into
+    -- this file 2026-07-14 when drift-check caught the lag vs production.
+    asking_price REAL,
+    asking_price_basis TEXT,
+
+    -- Deal provenance (JSON blob: broker, listing/CFO/best-and-final dates)
+    provenance_data TEXT,
+
+    -- GIS portal URL (county parcel viewer), editable from deal header
+    gis_url TEXT,
+
     -- Dev-agent step outputs (JSON blobs, one per underwriting step)
     -- Shape of each blob matches the corresponding deal-state.json section
     -- in the fordcwprop/dev-agent repo. See Dev Agent/system/architecture.md.

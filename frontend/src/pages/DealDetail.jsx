@@ -1064,80 +1064,93 @@ function CorrectionNoticesBanner({ deal }) {
 // Click a question to expand its context. Returns null if no questions.
 // ────────────────────────────────────────────────────────────────
 function AnswerForm({ q, dealId, onSaved }) {
-  const [choice, setChoice] = useState(q.answer?.selected_choice || '')
-  const [text, setText] = useState(q.answer?.answer_text || '')
-  const [saving, setSaving] = useState(false)
+  // One-click answering (Jack, 2026-07-14): each choice is a button — click
+  // it and the answer is saved immediately. The last chip opens a free-text
+  // box for a custom answer. The runner picks answers up before every step
+  // and on the scheduled poll; a divergent answer replays affected steps.
+  const [busy, setBusy] = useState(null)        // which chip is saving
   const [error, setError] = useState(null)
-  const hasChoices = Array.isArray(q.choices) && q.choices.length > 0
+  const [customOpen, setCustomOpen] = useState(false)
+  const [text, setText] = useState(q.answer?.answer_text || '')
+  const choices = (Array.isArray(q.choices) ? q.choices : [])
+    .map(c => (typeof c === 'string' ? c : (c.label || c.value))).filter(Boolean)
 
-  const save = async (e) => {
-    e?.stopPropagation()
-    if (!choice && !text.trim()) { setError('Pick a choice or type an answer first.'); return }
-    setSaving(true); setError(null)
+  const submit = async (payload, key) => {
+    setBusy(key); setError(null)
     try {
       await api.answerQuestion(dealId, q.id, {
-        answer_text: text.trim() || null,
-        selected_choice: choice || null,
         question_text: q.question,
         step: q.source_step || q.step || null,
+        ...payload,
       })
+      setCustomOpen(false)
       onSaved?.()
-    } catch (err) {
-      setError(err.message || 'Save failed')
-    } finally { setSaving(false) }
+    } catch (err) { setError(err.message || 'Save failed') }
+    finally { setBusy(null) }
   }
 
   const clear = async (e) => {
     e?.stopPropagation()
-    setSaving(true); setError(null)
-    try {
-      await api.clearAnswer(dealId, q.id)
-      setChoice(''); setText('')
-      onSaved?.()
-    } catch (err) { setError(err.message || 'Clear failed') }
-    finally { setSaving(false) }
+    setBusy('clear'); setError(null)
+    try { await api.clearAnswer(dealId, q.id); setText(''); onSaved?.() }
+    catch (err) { setError(err.message || 'Clear failed') }
+    finally { setBusy(null) }
   }
+
+  const picked = q.answer?.selected_choice
 
   return (
     <div className="mt-3 pt-3 border-t border-cw-border/40 space-y-2" onClick={e => e.stopPropagation()}>
-      {hasChoices && (
-        <div className="flex flex-col gap-1">
-          {q.choices.map((c, idx) => (
-            <label key={idx} className="flex items-start gap-2 text-xs text-gray-200 cursor-pointer hover:text-white">
-              <input
-                type="radio"
-                name={`q-${q.id}`}
-                value={typeof c === 'string' ? c : (c.value || c.label)}
-                checked={choice === (typeof c === 'string' ? c : (c.value || c.label))}
-                onChange={e => setChoice(e.target.value)}
-                className="mt-0.5"
-              />
-              <span>{typeof c === 'string' ? c : (c.label || c.value)}</span>
-            </label>
-          ))}
+      <div className="flex flex-wrap gap-1.5">
+        {choices.map((c, idx) => {
+          const isAssumed = q.assumed_answer && c.trim().toLowerCase() === q.assumed_answer.trim().toLowerCase()
+          const isPicked = picked && c.trim().toLowerCase() === picked.trim().toLowerCase()
+          return (
+            <button key={idx}
+              onClick={() => submit({ selected_choice: c, answer_text: null }, idx)}
+              disabled={busy !== null}
+              className={`px-2.5 py-1.5 rounded-lg text-xs border text-left transition-colors disabled:opacity-60 ${
+                isPicked
+                  ? 'bg-green-900/40 border-green-600 text-green-200'
+                  : 'bg-cw-dark border-cw-border text-gray-200 hover:border-cw-accent hover:text-white'}`}>
+              {busy === idx ? 'Saving…' : c}
+              {isAssumed && <span className="ml-1.5 text-[10px] text-blue-400">(Claude assumed this)</span>}
+              {isPicked && <span className="ml-1.5 text-[10px] text-green-400">✓ your answer</span>}
+            </button>
+          )
+        })}
+        <button
+          onClick={() => setCustomOpen(o => !o)}
+          disabled={busy !== null}
+          className={`px-2.5 py-1.5 rounded-lg text-xs border transition-colors disabled:opacity-60 ${
+            customOpen || (q.answer?.answer_text && !picked)
+              ? 'bg-blue-900/30 border-blue-600 text-blue-200'
+              : 'bg-cw-dark border-dashed border-cw-border text-gray-400 hover:text-white hover:border-cw-accent'}`}>
+          ✎ Custom answer…
+        </button>
+      </div>
+      {customOpen && (
+        <div className="space-y-1.5">
+          <textarea
+            value={text}
+            onChange={e => setText(e.target.value)}
+            autoFocus
+            placeholder="Type your answer — Claude picks it up automatically and redoes any steps it changes."
+            className="w-full bg-cw-dark border border-cw-border rounded p-2 text-xs text-gray-200 placeholder-gray-600 focus:border-cw-accent focus:outline-none resize-y min-h-[60px]"
+          />
+          <button
+            onClick={() => text.trim() && submit({ answer_text: text.trim(), selected_choice: null }, 'custom')}
+            disabled={busy !== null || !text.trim()}
+            className="px-3 py-1 bg-cw-accent text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50">
+            {busy === 'custom' ? 'Saving…' : 'Send answer'}
+          </button>
         </div>
       )}
-      <textarea
-        value={text}
-        onChange={e => setText(e.target.value)}
-        placeholder={hasChoices ? 'Optional comment...' : 'Type your answer for Claude to pick up on the next run...'}
-        className="w-full bg-cw-dark border border-cw-border rounded p-2 text-xs text-gray-200 placeholder-gray-600 focus:border-cw-accent focus:outline-none resize-y min-h-[50px]"
-      />
       <div className="flex items-center gap-2">
-        <button
-          onClick={save}
-          disabled={saving}
-          className="px-3 py-1 bg-cw-accent text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : (q.answer ? 'Update answer' : 'Save answer')}
-        </button>
         {q.answer && (
-          <button
-            onClick={clear}
-            disabled={saving}
-            className="px-3 py-1 text-xs text-gray-400 hover:text-red-400"
-          >
-            Clear
+          <button onClick={clear} disabled={busy !== null}
+            className="px-2 py-0.5 text-xs text-gray-500 hover:text-red-400">
+            Clear answer
           </button>
         )}
         {error && <span className="text-xs text-red-400">{error}</span>}

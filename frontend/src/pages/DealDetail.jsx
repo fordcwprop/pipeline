@@ -2716,13 +2716,24 @@ export default function DealDetail({ dealId, onBack }) {
             }
           }
         }
-        // Backward-compat: also include any top-level questions_for_jack (DB column legacy)
+        // Also include the top-level questions_for_jack column, DEDUPED by
+        // question text against the blob walk above. sync-deal.py consolidates
+        // the same _contract questions into this column, so once it's populated
+        // (writable since 2026-07-14) nearly every question would otherwise
+        // appear twice — and the duplicate would render permanently unanswered,
+        // because answers key to the blob-walk fingerprint. The blob-walk copy
+        // wins; the column only contributes questions the blobs don't carry.
+        const seenText = new Set(aggregated.map(q =>
+          (typeof q.question === 'string' ? q.question : '').trim().toLowerCase()).filter(Boolean))
         let topLevel = deal.questions_for_jack
         if (typeof topLevel === 'string') { try { topLevel = JSON.parse(topLevel) } catch { topLevel = null } }
         if (Array.isArray(topLevel)) {
           for (const q of topLevel) {
+            const text = (typeof q === 'string' ? q : (q && typeof q === 'object' ? q.question : '') || '').trim().toLowerCase()
+            if (text && seenText.has(text)) continue
+            if (text) seenText.add(text)
             if (typeof q === 'string') aggregated.push({ question: q, blocks_downstream: false, context: null, answered: false, source_step: 'top-level' })
-            else if (q && typeof q === 'object') aggregated.push({ ...q, source_step: q.source_step || 'top-level', answered: q.answered || false })
+            else if (q && typeof q === 'object') aggregated.push({ ...q, source_step: q.source_step || q.step || 'top-level', answered: q.answered || false })
           }
         }
         // Stamp a stable id on every question so answers can be persisted

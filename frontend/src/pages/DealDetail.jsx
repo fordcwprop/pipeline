@@ -2811,6 +2811,17 @@ export default function DealDetail({ dealId, onBack }) {
             else if (q && typeof q === 'object') aggregated.push({ ...q, source_step: q.source_step || q.step || 'top-level', answered: q.answered || false })
           }
         }
+        // De-mojibake every displayed text field (legacy rows synced before
+        // the 2026-07-14 sync-deal.py encoding fix carry cp1252-mangled
+        // UTF-8 — "â€”" for em-dash and friends).
+        for (const q of aggregated) {
+          for (const f of ['question', 'context', 'assumed_answer', 'assumption_basis']) {
+            if (typeof q[f] === 'string') q[f] = fixMojibake(q[f])
+          }
+          if (Array.isArray(q.choices)) {
+            q.choices = q.choices.map(c => (typeof c === 'string' ? fixMojibake(c) : c))
+          }
+        }
         // Stamp a stable id on every question so answers can be persisted
         // against (deal_id, question_id). Prefer the skill-emitted q.id;
         // otherwise fall back to a deterministic fingerprint from step + text.

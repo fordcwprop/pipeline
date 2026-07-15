@@ -2710,6 +2710,22 @@ export default function DealDetail({ dealId, onBack }) {
           </div>
           <div className="text-sm text-gray-500 mt-0.5 flex items-center gap-2 flex-wrap">
             <span>{[deal.address, deal.city, deal.state].filter(Boolean).join(', ')}{deal.submarket ? ` · ${deal.submarket}` : ''}</span>
+            {(() => {
+              // Google Maps link — always derived from the address, never
+              // stored (no edit UI needed; it's never wrong to regenerate
+              // from data CP already has). Precise lat/lon isn't wired as a
+              // synced field yet — a natural upgrade later for raw land
+              // parcels with no clean street address.
+              const query = [deal.address, deal.city, deal.state].filter(Boolean).join(', ')
+              if (!query) return null
+              const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`
+              return (
+                <a href={mapsUrl} target="_blank" rel="noopener noreferrer"
+                   className="text-blue-400 hover:text-blue-300 text-xs underline underline-offset-2">
+                  Maps ↗
+                </a>
+              )
+            })()}
             {gisEditing ? (
               <span className="flex items-center gap-1.5">
                 <input

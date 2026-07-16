@@ -500,6 +500,7 @@ function Section({ title, children, icon: Icon }) {
 // Returns null for deals with no rent comp data.
 // ────────────────────────────────────────────────────────────────
 function RentCompsCard({ data }) {
+  const [expanded, setExpanded] = useState({})
   const market = (() => {
     if (data == null) return null
     if (typeof data !== 'string') return data
@@ -509,6 +510,8 @@ function RentCompsCard({ data }) {
   if (!Array.isArray(comps) || comps.length === 0) return null
 
   const fmtMoney = (v) => (typeof v === 'number' && isFinite(v)) ? `$${Math.round(v).toLocaleString()}` : null
+  const fmtSf = (v) => (typeof v === 'number' && isFinite(v)) ? `${Math.round(v).toLocaleString()}` : (typeof v === 'string' && v.trim() ? v : null)
+  const fmtPsf = (v) => (typeof v === 'number' && isFinite(v)) ? `$${v.toFixed(2)}` : null
 
   // Defensive accessors — different skills produce different field names. Each
   // helper tries multiple shapes and falls back gracefully.
@@ -519,6 +522,21 @@ function RentCompsCard({ data }) {
   const getDist = (c) => c.distance_miles ?? c.distance_mi ?? c.proximity_miles ?? c.miles ?? null
   const getSource = (c) => c.source || c.source_url || c.note || ''
   const getAddress = (c) => c.address || null
+  const getAvgSf = (c) => c.avg_unit_sf ?? c.avg_sf ?? c.avg_size ?? c.average_sf ?? null
+  const getRentPsf = (c) => c.rent_psf ?? c.rent_per_sf ?? c.psf ?? null
+  const getUrl = (c) => c.url || c.website || c.property_url || c.source_url_link || null
+  // Raw per-floorplan / per-unit backup rows (captured by the scrape). Multiple
+  // possible field names + shapes.
+  const getFloorplans = (c) => {
+    const fp = c.floorplans || c.floor_plans || c.units || c.unit_detail || c.unit_details || c.raw_units
+    return Array.isArray(fp) && fp.length ? fp : null
+  }
+  const toggle = (i) => setExpanded(e => ({ ...e, [i]: !e[i] }))
+
+  // Comp-set averages (numeric values only)
+  const numAvg = (vals) => { const n = vals.filter(v => typeof v === 'number' && isFinite(v)); return n.length ? n.reduce((a, b) => a + b, 0) / n.length : null }
+  const setAvgSf = numAvg(comps.map(getAvgSf))
+  const setAvgPsf = numAvg(comps.map(getRentPsf))
   // Try to extract per-bedroom rent. Multiple shapes:
   //   {rents: {1br: 1795, 2br: 2363, 3br: 2725, avg: 2264}}
   //   {rents: {1br: {sf, rent, rent_psf}, ...}}
@@ -567,6 +585,8 @@ function RentCompsCard({ data }) {
               <th className="py-1.5 pr-3 text-right">Units</th>
               <th className="py-1.5 pr-3">Product</th>
               <th className="py-1.5 pr-3 text-right">Dist</th>
+              <th className="py-1.5 pr-3 text-right">Avg SF</th>
+              <th className="py-1.5 pr-3 text-right">Rent PSF</th>
               {hasBedroomBreakdown ? (
                 <>
                   <th className="py-1.5 pr-3 text-right">1BR</th>
@@ -585,19 +605,36 @@ function RentCompsCard({ data }) {
               const dist = getDist(c)
               const addr = getAddress(c)
               const cls = c.class
+              const url = getUrl(c)
+              const fps = getFloorplans(c)
+              const colCount = hasBedroomBreakdown ? 12 : 9
               return (
-                <tr key={i} className="border-b border-cw-border/40">
+                <React.Fragment key={i}>
+                <tr className="border-b border-cw-border/40">
                   <td className="py-1.5 pr-3 text-gray-200">
-                    {getName(c)}
-                    {cls && <span className="ml-1 text-[10px] text-gray-500">Cl {cls}</span>}
-                    {addr && <div className="text-[11px] text-gray-500 mt-0.5">{addr}</div>}
-                    {c.note && <div className="text-[11px] text-gray-500 mt-0.5">{c.note}</div>}
-                    {c.role && <div className="text-[11px] text-gray-600 mt-0.5 italic">{c.role}</div>}
+                    <span className="flex items-center gap-1.5">
+                      {fps && (
+                        <button onClick={() => toggle(i)} className="text-gray-500 hover:text-gray-300 text-xs w-3 shrink-0"
+                                title="Show unit-level backup">{expanded[i] ? '▾' : '▸'}</button>
+                      )}
+                      {url ? (
+                        <a href={url} target="_blank" rel="noopener noreferrer"
+                           className="text-blue-400 hover:text-blue-300 underline underline-offset-2">{getName(c)}</a>
+                      ) : getName(c)}
+                      {url && <a href={url} target="_blank" rel="noopener noreferrer" title="Property website"
+                                 className="text-gray-500 hover:text-blue-300 text-[10px]">↗</a>}
+                      {cls && <span className="text-[10px] text-gray-500">Cl {cls}</span>}
+                    </span>
+                    {addr && <div className="text-[11px] text-gray-500 mt-0.5 pl-[18px]">{addr}</div>}
+                    {c.note && <div className="text-[11px] text-gray-500 mt-0.5 pl-[18px]">{c.note}</div>}
+                    {c.role && <div className="text-[11px] text-gray-600 mt-0.5 italic pl-[18px]">{c.role}</div>}
                   </td>
                   <td className="py-1.5 pr-3 text-gray-400">{getYear(c) || '—'}</td>
                   <td className="py-1.5 pr-3 text-right text-gray-400">{getUnits(c) || '—'}</td>
                   <td className="py-1.5 pr-3 text-gray-400 text-xs">{getProduct(c) || '—'}</td>
                   <td className="py-1.5 pr-3 text-right text-gray-400">{dist != null ? `${dist} mi` : '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{fmtSf(getAvgSf(c)) || '—'}</td>
+                  <td className="py-1.5 pr-3 text-right text-gray-400">{fmtPsf(getRentPsf(c)) || '—'}</td>
                   {hasBedroomBreakdown ? (
                     <>
                       <td className="py-1.5 pr-3 text-right">{getRent(c, '1br') || '—'}</td>
@@ -610,8 +647,63 @@ function RentCompsCard({ data }) {
                   )}
                   <td className="py-1.5 pr-3 text-[11px] text-gray-500">{getSource(c) || '—'}</td>
                 </tr>
+                {fps && expanded[i] && (
+                  <tr className="bg-cw-dark/50">
+                    <td colSpan={colCount} className="px-3 py-2">
+                      <div className="text-[11px] text-gray-500 mb-1 uppercase tracking-wide">Unit-level backup — {fps.length} row{fps.length === 1 ? '' : 's'}</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-left text-[10px] text-gray-500">
+                              <th className="py-1 pr-3">Floor plan / Unit</th>
+                              <th className="py-1 pr-3 text-right">Beds</th>
+                              <th className="py-1 pr-3 text-right">SF</th>
+                              <th className="py-1 pr-3 text-right">Rent</th>
+                              <th className="py-1 pr-3 text-right">Eff. rent</th>
+                              <th className="py-1 pr-3 text-right">PSF</th>
+                              <th className="py-1 pr-3 text-right">Avail</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {fps.map((u, j) => {
+                              const label = u.floorplan || u.name || u.plan || u.label || u.unit_number || u.unit || u.apt || '—'
+                              const beds = u.beds ?? u.bedrooms ?? u.br ?? null
+                              const sf = u.sf ?? u.unit_sf ?? u.size ?? u.square_feet ?? null
+                              const rent = u.rent ?? u.asking_rent ?? u.price ?? null
+                              const eff = u.effective_rent ?? u.eff_rent ?? null
+                              const psf = u.rent_psf ?? u.psf ?? (typeof rent === 'number' && typeof sf === 'number' && sf ? rent / sf : null)
+                              const avail = u.available_units ?? u.available ?? u.units_available ?? u.avail ?? null
+                              const unitNo = u.unit_number || u.unit || u.apt
+                              return (
+                                <tr key={j} className="border-t border-cw-border/30 text-gray-300">
+                                  <td className="py-1 pr-3">{label}{unitNo && label !== unitNo && <span className="text-gray-600 ml-1">#{unitNo}</span>}</td>
+                                  <td className="py-1 pr-3 text-right text-gray-400">{beds ?? '—'}</td>
+                                  <td className="py-1 pr-3 text-right text-gray-400">{fmtSf(sf) || '—'}</td>
+                                  <td className="py-1 pr-3 text-right">{fmtMoney(rent) || '—'}</td>
+                                  <td className="py-1 pr-3 text-right text-gray-400">{fmtMoney(eff) || '—'}</td>
+                                  <td className="py-1 pr-3 text-right text-gray-400">{fmtPsf(psf) || '—'}</td>
+                                  <td className="py-1 pr-3 text-right text-gray-400">{avail ?? '—'}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               )
             })}
+            {(setAvgSf != null || setAvgPsf != null) && (
+              <tr className="text-xs text-gray-400 font-medium">
+                <td className="py-1.5 pr-3">Comp-set average</td>
+                <td colSpan={4}></td>
+                <td className="py-1.5 pr-3 text-right">{setAvgSf != null ? Math.round(setAvgSf).toLocaleString() : '—'}</td>
+                <td className="py-1.5 pr-3 text-right">{setAvgPsf != null ? `$${setAvgPsf.toFixed(2)}` : '—'}</td>
+                <td colSpan={hasBedroomBreakdown ? 5 : 2}></td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>

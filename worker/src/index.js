@@ -30,6 +30,7 @@ const JSON_BLOB_FIELDS = new Set([
   'scenarios_data',
   'sources_data',
   'phase_context',
+  'first_pass_data',
 ]);
 
 // ────────────────────────────────────────────────────────────────
@@ -460,6 +461,8 @@ async function handleCreateDeal(request, env) {
     'questions_for_jack',
     // Human-readable .md files from the deal folder (DocumentsCard)
     'deal_documents',
+    // Strategy-first funnel: first-pass ranking + steering pick (StrategyFirstPassCard)
+    'first_pass_data',
     // GIS portal URL (county parcel viewer), editable from deal header
     'gis_url'
   ];
@@ -530,6 +533,8 @@ async function handleUpdateDeal(request, env, dealId) {
     'questions_for_jack',
     // Human-readable .md files from the deal folder (DocumentsCard)
     'deal_documents',
+    // Strategy-first funnel: first-pass ranking + steering pick (StrategyFirstPassCard)
+    'first_pass_data',
     // GIS portal URL (county parcel viewer), editable from deal header
     'gis_url'
   ];

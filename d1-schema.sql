@@ -85,6 +85,11 @@ CREATE TABLE IF NOT EXISTS deals (
     -- reads memos on the deal page, not GitHub. (migration 010)
     deal_documents TEXT,
 
+    -- Strategy-first funnel: first-pass ranking + steering pick, rendered as
+    -- the StrategyFirstPassCard so Jack picks which strategies go deep.
+    -- (migration 011)
+    first_pass_data TEXT,
+
     -- Dev-agent step outputs (JSON blobs, one per underwriting step)
     -- Shape of each blob matches the corresponding deal-state.json section
     -- in the fordcwprop/dev-agent repo. See Dev Agent/system/architecture.md.

@@ -499,6 +499,110 @@ function Section({ title, children, icon: Icon }) {
 // Shows: name · year/class · units · distance · 1BR/2BR/3BR rents · source.
 // Returns null for deals with no rent comp data.
 // ────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────
+// StrategyFirstPassCard — the steering gate. Shows each in-play strategy's
+// first-pass economics (YoC, development spread, thesis, kill flag) and lets
+// Jack greenlight one or more (up to 3) to take into a full deep underwrite.
+// Reads deal.first_pass_data; posts the pick as a JSON array on the
+// "strategy-select" question through the normal answer path.
+// ────────────────────────────────────────────────────────────────
+function StrategyFirstPassCard({ deal, onChanged }) {
+  const fp = (() => {
+    const v = deal?.first_pass_data
+    if (v == null) return null
+    if (typeof v !== 'string') return v
+    try { return JSON.parse(v) } catch { return null }
+  })()
+  const [picked, setPicked] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  if (!fp || !Array.isArray(fp.strategies) || fp.strategies.length === 0) return null
+
+  const rows = fp.strategies
+  const awaiting = fp.awaiting_selection && !(fp.selected && fp.selected.length)
+  const selectedSet = new Set(fp.selected || [])
+  const toggle = (id) => setPicked(p => p.includes(id) ? p.filter(x => x !== id) : (p.length < 3 ? [...p, id] : p))
+  const fmtPct = (v) => (typeof v === 'number' ? `${v.toFixed(2)}%` : '—')
+  const fmtBps = (v) => (typeof v === 'number' ? `${v > 0 ? '+' : ''}${Math.round(v)} bps` : '—')
+
+  const submit = async () => {
+    if (!picked.length) return
+    setBusy(true); setError(null)
+    try {
+      await api.answerQuestion(deal.id, 'strategy-select', {
+        question_text: 'Which strategies to deep-dive',
+        step: 'step_3_7_steering',
+        answer_text: JSON.stringify(picked),
+        selected_choice: null,
+      })
+      onChanged?.()
+    } catch (err) { setError(err.message || 'Save failed') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Target className="w-4 h-4 text-yellow-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Strategy First Pass</h3>
+        {awaiting
+          ? <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-300 font-medium">pick which go deep</span>
+          : fp.auto
+          ? <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-400">auto-selected (only one viable)</span>
+          : selectedSet.size > 0
+          ? <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-300">{selectedSet.size} in deep underwrite</span>
+          : null}
+      </div>
+
+      <div className="space-y-2">
+        {rows.map((r, i) => {
+          const id = r.strategy_id
+          const isSel = selectedSet.has(id)
+          const isPick = picked.includes(id)
+          const kill = r.kill_recommendation && r.kill_recommendation.recommend
+          return (
+            <div key={id || i}
+              className={`rounded-lg border p-3 ${isSel ? 'border-green-800 bg-green-900/10' : kill ? 'border-red-900/60 bg-red-900/10' : 'border-cw-border bg-cw-dark'} ${awaiting ? 'cursor-pointer' : ''}`}
+              onClick={awaiting ? () => toggle(id) : undefined}>
+              <div className="flex items-start gap-2">
+                {awaiting && (
+                  <input type="checkbox" checked={isPick} readOnly
+                    className="mt-1 accent-green-500 pointer-events-none" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-medium text-white">{id}</span>
+                    <span className="text-xs text-gray-400">YoC {fmtPct(r.yoc_pct)}</span>
+                    <span className={`text-xs font-medium ${typeof r.dev_spread_bps === 'number' && r.dev_spread_bps >= 100 ? 'text-green-400' : 'text-amber-400'}`}>
+                      spread {fmtBps(r.dev_spread_bps)}
+                    </span>
+                    {isSel && <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-900/50 text-green-300">GREENLIT</span>}
+                    {kill && <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-900/50 text-red-300">KILL REC</span>}
+                  </div>
+                  {r.thesis && <p className="text-xs text-gray-400 mt-1 leading-relaxed">{r.thesis}</p>}
+                  {kill && r.kill_recommendation.reason &&
+                    <p className="text-[11px] text-red-300/80 mt-1 italic">Kill rec: {r.kill_recommendation.reason}</p>}
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      {awaiting && (
+        <div className="mt-3 flex items-center gap-3">
+          <button onClick={submit} disabled={!picked.length || busy}
+            className="text-xs px-3 py-1.5 rounded-lg bg-green-700 hover:bg-green-600 disabled:opacity-40 text-white font-medium">
+            {busy ? 'Saving…' : `Deep-dive ${picked.length || 0} selected`}
+          </button>
+          <span className="text-[11px] text-gray-500">Pick 1–3. The rest are set aside (still visible here).</span>
+          {error && <span className="text-[11px] text-red-400">{error}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function RentCompsCard({ data }) {
   const [expanded, setExpanded] = useState({})
   const market = (() => {
@@ -2976,8 +3080,14 @@ export default function DealDetail({ dealId, onBack }) {
           }
         }
         const reload = () => { api.getDeal(deal.id).then(d => setDeal(d)).catch(console.error) }
-        return <QuestionsForJack questions={aggregated} dealId={deal.id} onAnswered={reload} />
+        // The strategy-select steering question renders in its own
+        // StrategyFirstPassCard (with the economics), not the normal list.
+        const visible = aggregated.filter(q => q.render !== 'strategy_select')
+        return <QuestionsForJack questions={visible} dealId={deal.id} onAnswered={reload} />
       })()}
+
+      {/* Strategy first-pass + steering — pick which strategies go deep */}
+      <StrategyFirstPassCard deal={deal} onChanged={() => api.getDeal(deal.id).then(setDeal).catch(console.error)} />
 
       {/* Documents — deal-memo.md and friends, readable on the page */}
       <DocumentsCard deal={deal} />

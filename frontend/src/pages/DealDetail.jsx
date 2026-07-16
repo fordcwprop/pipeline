@@ -1216,11 +1216,15 @@ function DocumentsCard({ deal }) {
 
 function QuestionsForJack({ questions, dealId, onAnswered }) {
   const [expanded, setExpanded] = useState({})
+  // Answered questions nest away by default (Jack, 2026-07-16): the panel is
+  // for what still needs him, not a scrapbook of what he already settled.
+  const [showAnswered, setShowAnswered] = useState(false)
   if (!questions || questions.length === 0) return null
 
   const blockers = questions.filter(q => q.blocks_downstream && !q.answered)
   const open = questions.filter(q => !q.blocks_downstream && !q.answered)
   const answered = questions.filter(q => q.answered)
+  const allAnswered = blockers.length === 0 && open.length === 0
 
   const toggle = (i) => setExpanded(e => ({ ...e, [i]: !e[i] }))
 
@@ -1285,6 +1289,30 @@ function QuestionsForJack({ questions, dealId, onAnswered }) {
     </div>
   )
 
+  // Everything answered: the whole card collapses to a single quiet line,
+  // expandable when Jack wants to revisit what he decided.
+  if (allAnswered) {
+    return (
+      <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+        <div
+          className="flex items-center gap-2 cursor-pointer select-none"
+          onClick={() => setShowAnswered(s => !s)}
+        >
+          <CheckCircle className="w-4 h-4 text-green-500" />
+          <span className="text-sm text-gray-400">
+            All {answered.length} question{answered.length === 1 ? '' : 's'} answered
+          </span>
+          <span className="text-gray-600 text-xs ml-auto">{showAnswered ? '▲ hide' : '▼ show'}</span>
+        </div>
+        {showAnswered && (
+          <div className="space-y-2 mt-3">
+            {answered.map((q, i) => <QuestionRow key={`a${i}`} q={q} i={`a${i}`} blocker={false} />)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="bg-cw-card border border-cw-border rounded-xl p-4">
       <div className="flex items-center gap-2 mb-3">
@@ -1301,17 +1329,21 @@ function QuestionsForJack({ questions, dealId, onAnswered }) {
               {open.length} open
             </span>
           )}
-          {answered.length > 0 && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-800 text-gray-500">
-              {answered.length} answered
-            </span>
-          )}
         </div>
       </div>
       <div className="space-y-2">
         {blockers.map((q, i) => <QuestionRow key={`b${i}`} q={q} i={`b${i}`} blocker />)}
         {open.map((q, i) => <QuestionRow key={`o${i}`} q={q} i={`o${i}`} blocker={false} />)}
-        {answered.map((q, i) => <QuestionRow key={`a${i}`} q={q} i={`a${i}`} blocker={false} />)}
+        {answered.length > 0 && (
+          <div
+            className="flex items-center gap-2 pt-1 cursor-pointer select-none text-xs text-gray-500 hover:text-gray-400"
+            onClick={() => setShowAnswered(s => !s)}
+          >
+            <CheckCircle className="w-3.5 h-3.5 text-green-600" />
+            <span>{answered.length} answered {showAnswered ? '▲' : '▼'}</span>
+          </div>
+        )}
+        {showAnswered && answered.map((q, i) => <QuestionRow key={`a${i}`} q={q} i={`a${i}`} blocker={false} />)}
       </div>
     </div>
   )

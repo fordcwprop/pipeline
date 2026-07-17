@@ -1,10 +1,13 @@
 // API client for CW Pipeline
 
-// In production, API calls go to the same domain via Worker route
-// (pipeline.cwprop.com/api/* routes to the Worker, same Access gate)
-const API_BASE = window.location.hostname === 'localhost'
-  ? 'http://localhost:8001'
-  : '';
+// Production: same-domain /api/* routes to the Worker behind Cloudflare Access
+// (Access injects Cf-Access-Authenticated-User-Email). A staging build sets
+// VITE_API_BASE (the staging Worker URL) + VITE_AUTH_EMAIL, so the raw Pages
+// URL — which has no Access in front of it — can reach the staging Worker and
+// pass the auth header itself. Never set these for the production build.
+const API_BASE = import.meta.env.VITE_API_BASE
+  || (window.location.hostname === 'localhost' ? 'http://localhost:8001' : '');
+const STAGING_AUTH_EMAIL = import.meta.env.VITE_AUTH_EMAIL || '';
 
 async function apiFetch(path, options = {}) {
   const url = `${API_BASE}${path}`;
@@ -12,6 +15,7 @@ async function apiFetch(path, options = {}) {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(STAGING_AUTH_EMAIL ? { 'Cf-Access-Authenticated-User-Email': STAGING_AUTH_EMAIL } : {}),
       ...options.headers,
     },
   });

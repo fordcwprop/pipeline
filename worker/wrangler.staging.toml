@@ -1,0 +1,15 @@
+# Staging worker: same code as production, bound to the pre-fable-restore-test
+# D1 (a byte-exact copy of prod). Used for the strategy-first funnel staging
+# demo so Jack can click a real funnel deal without touching production.
+# Deploy:  wrangler deploy -c wrangler.staging.toml
+name = "pipeline-backend-staging"
+main = "src/index.js"
+compatibility_date = "2024-09-23"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pre-fable-restore-test"
+database_id = "53985c61-41d2-479c-8f2a-4694b84ddc29"
+
+[vars]
+ENVIRONMENT = "staging"

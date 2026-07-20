@@ -1705,6 +1705,163 @@ function StabilizedValueBox({ noi, tdc, units }) {
   )
 }
 
+// ────────────────────────────────────────────────────────────────
+// ProFormaTables — Jack's standard two tables for every dev scenario
+// (2026-07-20): Development Cost (land / hard / soft → TDC) and the
+// stabilized income statement (GPR / other income / vacancy → EGI;
+// controllable / non-controllable → total expenses; NOI), each shown as
+// Total | Per unit | Per heated-rentable SF. Renders from noi_data +
+// dev_cost_data (top level) or a scenario's step_5_noi + step_6_dev_costs.
+// ────────────────────────────────────────────────────────────────
+function ProFormaTables({ noi, devCost, unitMix, unitsHint }) {
+  const n = noi || {}
+  const c = devCost || {}
+  const oe = n.operating_expenses || {}
+
+  const num = (...vals) => { for (const v of vals) { const x = Number(v); if (v != null && Number.isFinite(x)) return x } return null }
+
+  // Units + heated rentable SF (NRSF): sum of count×avg_sf across the mix,
+  // else units × avg SF, else back out of hard cost per-SF-NRA.
+  const units = num(unitsHint, c.units_costed, n.units, c.units)
+  const mixRows = Array.isArray(unitMix) ? unitMix : []
+  let hrsf = mixRows.reduce((a, r) => {
+    const ct = num(r.count, r.units); const sf = num(r.avg_sf, r.sf, r.unit_sf)
+    return (ct && sf) ? a + ct * sf : a
+  }, 0) || null
+  if (!hrsf) {
+    const hct = num(c.hard_cost_total); const psf = num(c.hard_cost_per_sf_nra)
+    if (hct && psf) hrsf = hct / psf
+  }
+
+  const fmtT = (v) => v == null ? '—' : `$${Math.round(v).toLocaleString()}`
+  const fmtU = (v) => (v == null || !units) ? '—' : `$${Math.round(v / units).toLocaleString()}`
+  const fmtS = (v) => (v == null || !hrsf) ? '—' : `$${(v / hrsf).toFixed(2)}`
+
+  // ---- development cost rows ----
+  const land = num(c.land?.total, c.land_cost, c.land_total)
+  const hard = num(c.hard_cost_total, c.hard_costs?.total, c.total_dev_cost?.hard_total)
+  const soft = num(c.soft_cost_total, c.soft_costs?.total, c.total_dev_cost?.soft_total)
+  const conting = num(c.contingency, c.contingency_total)
+  const fin = num(c.financing_costs, c.cap_interest_total)
+  const tdc = num(c.tdc, c.tdc_total, c.total_dev_cost?.tdc_total)
+
+  // ---- income statement rows ----
+  const gpr = num(n.gpr, n.market_rent_annual, n.gross_potential_rent)
+  const other = num(n.other_income)
+  const vac = num(n.vacancy_loss)
+  const conc = num(n.concessions)
+  const egi = num(n.egi)
+  const mgmtPct = num(n.property_mgmt_pct)
+  const mgmt = num(n.management_fee, (mgmtPct != null && egi != null) ? egi * (mgmtPct > 1 ? mgmtPct / 100 : mgmtPct) : null)
+  const ctrlBase = num(oe.controllable_total,
+    ['repairs_maintenance', 'payroll', 'admin', 'marketing', 'turnover']
+      .reduce((a, k) => (num(n[k]) != null ? (a ?? 0) + num(n[k]) : a), null))
+  const taxes = num(n.real_estate_taxes)
+  const ins = num(n.insurance, oe.insurance_total)
+  const util = num(n.utilities_owner, n.utilities)
+  const nonCtrl = (taxes != null || ins != null || util != null)
+    ? (taxes ?? 0) + (ins ?? 0) + (util ?? 0) : null
+  const reserves = (num(n.reserves_per_unit) != null && units) ? num(n.reserves_per_unit) * units : num(n.reserves_total)
+  // Reconciliation-aware mgmt-fee handling: some deals bake the mgmt fee into
+  // controllable_total / total_opex, some don't. Add it on top ONLY if doing
+  // so lands closer to the stated total — never double-count.
+  const statedTot = num(n.total_opex, n.opex_total)
+  let ctrl = ctrlBase
+  if (ctrlBase != null && mgmt != null && nonCtrl != null && statedTot != null) {
+    const without = ctrlBase + nonCtrl + (reserves ?? 0)
+    const withMgmt = without + mgmt
+    ctrl = Math.abs(withMgmt - statedTot) < Math.abs(without - statedTot) ? ctrlBase + mgmt : ctrlBase
+  } else if (ctrlBase != null && mgmt != null && statedTot == null) {
+    ctrl = ctrlBase + mgmt
+  }
+  const mgmtShown = ctrl != null && ctrlBase != null && ctrl > ctrlBase
+  const totOpex = statedTot ?? ((ctrl != null && nonCtrl != null) ? ctrl + nonCtrl + (reserves ?? 0) : null)
+  const noiV = num(n.noi)
+
+  const hasDev = [land, hard, soft, tdc].some(v => v != null)
+  const hasInc = [gpr, egi, noiV].some(v => v != null)
+  if (!hasDev && !hasInc) return null
+
+  const Row = ({ label, v, cls = '', indent = false, neg = false }) => (
+    <tr className={`border-b border-cw-border/30 ${cls}`}>
+      <td className={`py-1 pr-3 ${indent ? 'pl-4 text-gray-500 text-xs' : 'text-gray-300'}`}>{label}</td>
+      <td className="py-1 pr-3 text-right tabular-nums">{neg && v != null ? `(${fmtT(v).replace('$-', '$')})` : fmtT(v)}</td>
+      <td className="py-1 pr-3 text-right tabular-nums text-gray-400">{fmtU(v)}</td>
+      <td className="py-1 pr-3 text-right tabular-nums text-gray-400">{fmtS(v)}</td>
+    </tr>
+  )
+  const Head = ({ title }) => (
+    <thead>
+      <tr className="text-left text-[11px] text-gray-500 border-b border-cw-border">
+        <th className="py-1.5 pr-3">{title}</th>
+        <th className="py-1.5 pr-3 text-right">Total</th>
+        <th className="py-1.5 pr-3 text-right">Per unit</th>
+        <th className="py-1.5 pr-3 text-right">Per HRSF</th>
+      </tr>
+    </thead>
+  )
+
+  return (
+    <div className="space-y-4">
+      {hasDev && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <Head title="Development Cost" />
+            <tbody>
+              <Row label="Land" v={land} />
+              <Row label="Hard cost" v={hard} />
+              <Row label="Soft cost" v={soft} />
+              {conting != null && <Row label="Contingency" v={conting} indent />}
+              {fin != null && <Row label="Financing costs" v={fin} indent />}
+              <Row label="Total development cost" v={tdc} cls="font-medium text-white border-t border-cw-border" />
+            </tbody>
+          </table>
+        </div>
+      )}
+      {hasInc && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <Head title="Stabilized Income Statement" />
+            <tbody>
+              <Row label="Market rent (GPR)" v={gpr} />
+              <Row label="Other income" v={other} />
+              {vac != null && <Row label="Less: vacancy" v={-Math.abs(vac)} />}
+              {conc != null && conc !== 0 && <Row label="Less: concessions" v={-Math.abs(conc)} />}
+              <Row label="Effective gross income" v={egi} cls="font-medium text-white border-t border-cw-border" />
+              <Row label={`Controllable expenses${mgmtShown ? ' (incl. mgmt fee)' : ''}`} v={ctrl != null ? -ctrl : null} />
+              <Row label="Non-controllable (taxes, insurance, utilities)" v={nonCtrl != null ? -nonCtrl : null} />
+              {reserves != null && <Row label="Replacement reserves" v={-reserves} indent />}
+              <Row label="Total operating expenses" v={totOpex != null ? -totOpex : null} cls="font-medium text-white border-t border-cw-border" />
+              <Row label="Net operating income" v={noiV} cls="font-semibold text-green-300 border-t border-cw-border" />
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="text-[11px] text-gray-500">
+        {units ? `${units} units` : ''}{hrsf ? ` · ${Math.round(hrsf).toLocaleString()} heated rentable SF` : ''}
+        {hrsf ? ` · HRSF = Σ(unit count × avg unit SF)` : ''}
+      </div>
+    </div>
+  )
+}
+
+function ProFormaCard({ deal }) {
+  const parse = (v) => { if (v == null) return null; if (typeof v !== 'string') return v; try { return JSON.parse(v) } catch { return null } }
+  const noi = parse(deal.noi_data)
+  const devCost = parse(deal.dev_cost_data)
+  const unitMix = parse(deal.unit_mix)
+  if (!noi && !devCost) return null
+  return (
+    <div className="bg-cw-card border border-cw-border rounded-xl p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Calculator className="w-4 h-4 text-gray-400" />
+        <h3 className="text-sm font-semibold text-gray-400">Pro Forma Summary</h3>
+      </div>
+      <ProFormaTables noi={noi} devCost={devCost} unitMix={unitMix} unitsHint={deal.units} />
+    </div>
+  )
+}
+
 function ScenarioDetailDrawer({ scenario, sources, onClose }) {
   if (!scenario) return null
   const s4 = scenario.step_4_unit_mix || {}
@@ -1798,6 +1955,11 @@ function ScenarioDetailDrawer({ scenario, sources, onClose }) {
             <MetricBox label="Levered IRR" value={fmtPct(irr)} />
             <MetricBox label="Equity Multiple" value={fmtX(em)} sub={devSpread != null ? `Dev spread ${devSpread > 0 ? '+' : ''}${devSpread}bps` : null} />
           </div>
+
+          {/* Pro forma — Jack's standard two tables, per scenario */}
+          <Section title="Pro Forma Summary" icon={Calculator}>
+            <ProFormaTables noi={s5} devCost={s6} unitMix={unitMixRows} unitsHint={units} />
+          </Section>
 
           {/* Unit Mix */}
           <Section title="Unit Mix" icon={Home}>
@@ -3356,6 +3518,7 @@ export default function DealDetail({ dealId, onBack }) {
             <MetricCard label="NOI / Unit" value={m.noi && deal.units ? fmtMoney(Math.round(m.noi / deal.units)) : '—'} />
             <MetricCard label="Going-in Cap" value={fmtPct(m.going_in_cap_rate)} />
           </div>
+          <ProFormaCard deal={deal} />
           <TaxCompsCard data={deal.noi_data} />
           <StepSection title="NOI output" icon={FileText} data={deal.noi_data} stepKey="step_5_noi" />
         </StepBlock>

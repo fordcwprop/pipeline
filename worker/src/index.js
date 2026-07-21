@@ -37,12 +37,24 @@ const JSON_BLOB_FIELDS = new Set([
 // Auth & Utility Functions
 // ────────────────────────────────────────────────────────────────
 
-function getUserFromRequest(request) {
-  // Check both the original Access header and our custom proxy header
-  const email = request.headers.get('Cf-Access-Authenticated-User-Email')
-    || request.headers.get('X-Access-User-Email');
+function getUserFromRequest(request, env) {
+  // Identity is supplied by a trusted caller — the Pages proxy (which verifies
+  // the Cloudflare Access JWT signature first) or a server-side sync script —
+  // via X-Proxy-User-Email. We trust that header ONLY because the X-Proxy-Secret
+  // gate in fetch() has already proven the caller is trusted; an untrusted
+  // caller can never reach this code. Note: Cf-Access-Authenticated-User-Email
+  // is unreliable at this layer because Cloudflare strips client-set Cf-* headers
+  // before they reach the Worker, so the proxy-owned header is authoritative.
+  // In production there is NO admin fallback: no identity means anonymous.
+  const email = request.headers.get('X-Proxy-User-Email')
+    || request.headers.get('Cf-Access-Authenticated-User-Email');
   if (!email) {
-    return { email: 'local@dev.com', role: 'admin' };
+    // Dev/local convenience only. In production (ENVIRONMENT=production) a
+    // request with no verified Access identity is anonymous.
+    if (!env || env.ENVIRONMENT !== 'production') {
+      return { email: 'local@dev.com', role: 'admin' };
+    }
+    return null;
   }
 
   const adminEmails = new Set([
@@ -58,9 +70,13 @@ function getUserFromRequest(request) {
   return { email: cleanEmail, role };
 }
 
+// Legit browser traffic reaches this Worker only via the same-origin Pages
+// proxy (a server-side fetch, no Origin header), so a wildcard CORS origin is
+// unnecessary. Pin it to the app origin instead of '*'.
 function getCorsHeaders() {
   return {
-    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Origin': 'https://pipeline.cwprop.com',
+    'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Authenticated-User-Email',
   };
@@ -363,7 +379,7 @@ async function handleGetDeal(request, env, dealId) {
 // answer keyed by (deal_id, question_id). The orchestrator pulls these
 // back at the start of its next run on the deal (see deal-analyst SKILL.md).
 async function handleAnswerQuestion(request, env, dealId, questionId) {
-  const user = getUserFromRequest(request);
+  const user = getUserFromRequest(request, env);
   const body = await request.json().catch(() => ({}));
   const { answer_text, selected_choice, question_text, step } = body || {};
 
@@ -421,7 +437,7 @@ async function handleListAnswers(request, env, dealId) {
 }
 
 async function handleCreateDeal(request, env) {
-  const user = getUserFromRequest(request);
+  const user = getUserFromRequest(request, env);
   const body = await request.json();
 
   if (!body.name) return errorResponse('Deal name is required');
@@ -499,7 +515,7 @@ async function handleCreateDeal(request, env) {
 }
 
 async function handleUpdateDeal(request, env, dealId) {
-  const user = getUserFromRequest(request);
+  const user = getUserFromRequest(request, env);
   const body = await request.json();
 
   const deal = await env.DB.prepare('SELECT * FROM deals WHERE id = ?').bind(dealId).first();
@@ -644,8 +660,8 @@ async function handleGetActivity(request, env) {
   return jsonResponse({ activity: result.results || [] });
 }
 
-async function handleGetMe(request) {
-  const user = getUserFromRequest(request);
+async function handleGetMe(request, env) {
+  const user = getUserFromRequest(request, env);
   return jsonResponse(user);
 }
 
@@ -754,16 +770,39 @@ export default {
       return new Response(null, { status: 200, headers: getCorsHeaders() });
     }
 
+    // Trusted-proxy gate. Real traffic reaches this Worker only through the
+    // same-origin Pages Function, which sits behind Cloudflare Access and
+    // attaches this shared secret. Direct requests to the public *.workers.dev
+    // origin (which Access does NOT protect) carry no secret and are rejected.
+    // Enforced only once PROXY_SECRET is set, so the rollout order — deploy the
+    // proxy that sends the header first, then set this secret — never causes an
+    // outage.
+    if (env.PROXY_SECRET) {
+      if (request.headers.get('X-Proxy-Secret') !== env.PROXY_SECRET) {
+        return errorResponse('Forbidden', 403);
+      }
+    }
+
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+    const user = getUserFromRequest(request, env);
 
     try {
-      // Status
+      // Status — public health check, no identity required
       if (path === '/' || path === '/api/status') return handleStatus(request, env);
 
+      // Every other route requires a verified Access identity
+      if (!user) return errorResponse('Unauthorized', 401);
+
+      // Writes require an admin; viewers (non-cwprop signed-in users) are read-only
+      const isMutation = method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
+      if (isMutation && user.role !== 'admin') {
+        return errorResponse('Forbidden: admin role required', 403);
+      }
+
       // Auth
-      if (path === '/api/me') return handleGetMe(request);
+      if (path === '/api/me') return handleGetMe(request, env);
 
       // Stats
       if (path === '/api/stats' && method === 'GET') return handleGetStats(request, env);

@@ -1,2 +1,6 @@
-# Proxy API requests to the Worker backend (server-side proxy, preserves Access headers)
-/api/* https://pipeline-backend.office-a21.workers.dev/api/:splat 200
+# NOTE: do NOT add an `/api/* -> worker 200` proxy rule here.
+# A `_redirects` rewrite takes precedence over Pages Functions, which would
+# bypass functions/api/[[path]].js — the proxy that verifies the Access JWT and
+# attaches the shared X-Proxy-Secret. Without it the Worker (which now requires
+# that secret) returns 403 and the app shows no data. /api/* is handled by the
+# Function; everything else is a static asset.

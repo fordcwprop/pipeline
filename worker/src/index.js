@@ -38,19 +38,23 @@ const JSON_BLOB_FIELDS = new Set([
 // ────────────────────────────────────────────────────────────────
 
 function getUserFromRequest(request, env) {
-  // Identity is supplied by a trusted caller — the Pages proxy (which verifies
-  // the Cloudflare Access JWT signature first) or a server-side sync script —
-  // via X-Proxy-User-Email. We trust that header ONLY because the X-Proxy-Secret
-  // gate in fetch() has already proven the caller is trusted; an untrusted
-  // caller can never reach this code. Note: Cf-Access-Authenticated-User-Email
-  // is unreliable at this layer because Cloudflare strips client-set Cf-* headers
-  // before they reach the Worker, so the proxy-owned header is authoritative.
+  // Two trusted ways to establish identity:
+  //   1. Cloudflare Access (the browser path). Access injects
+  //      Cf-Access-Authenticated-User-Email, and Cloudflare STRIPS any
+  //      client-set copy on the unprotected origins (workers.dev / *-api.cwprop.com
+  //      — verified empirically), so the header's presence proves the request
+  //      passed Access. Safe to trust directly.
+  //   2. A server-side caller (deal-sync scripts, or the Pages Function) that
+  //      presents the shared X-Proxy-Secret. Only then do we trust the
+  //      proxy-owned X-Proxy-User-Email — that header is NOT stripped, so it is
+  //      worthless without the secret.
   // In production there is NO admin fallback: no identity means anonymous.
-  const email = request.headers.get('X-Proxy-User-Email')
-    || request.headers.get('Cf-Access-Authenticated-User-Email');
+  let email = request.headers.get('Cf-Access-Authenticated-User-Email');
+  if (!email && env && env.PROXY_SECRET
+      && request.headers.get('X-Proxy-Secret') === env.PROXY_SECRET) {
+    email = request.headers.get('X-Proxy-User-Email');
+  }
   if (!email) {
-    // Dev/local convenience only. In production (ENVIRONMENT=production) a
-    // request with no verified Access identity is anonymous.
     if (!env || env.ENVIRONMENT !== 'production') {
       return { email: 'local@dev.com', role: 'admin' };
     }
@@ -85,7 +89,15 @@ function getCorsHeaders() {
 function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'Content-Type': 'application/json', ...getCorsHeaders() },
+    headers: {
+      'Content-Type': 'application/json',
+      // API responses carry private data and must never sit in a shared edge
+      // cache (an earlier _redirects proxy cached a 200 that then leaked from
+      // the public *.pages.dev origin). Belt-and-suspenders now that the
+      // Function — not a cacheable rewrite — fronts the Worker.
+      'Cache-Control': 'private, no-store',
+      ...getCorsHeaders(),
+    },
   });
 }
 
@@ -770,29 +782,18 @@ export default {
       return new Response(null, { status: 200, headers: getCorsHeaders() });
     }
 
-    // Trusted-proxy gate. Real traffic reaches this Worker only through the
-    // same-origin Pages Function, which sits behind Cloudflare Access and
-    // attaches this shared secret. Direct requests to the public *.workers.dev
-    // origin (which Access does NOT protect) carry no secret and are rejected.
-    // Enforced only once PROXY_SECRET is set, so the rollout order — deploy the
-    // proxy that sends the header first, then set this secret — never causes an
-    // outage.
-    if (env.PROXY_SECRET) {
-      if (request.headers.get('X-Proxy-Secret') !== env.PROXY_SECRET) {
-        return errorResponse('Forbidden', 403);
-      }
-    }
-
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
+    // Identity comes from Cloudflare Access (browser) or the shared secret
+    // (server-side callers). A direct hit to the public origin has neither.
     const user = getUserFromRequest(request, env);
 
     try {
       // Status — public health check, no identity required
       if (path === '/' || path === '/api/status') return handleStatus(request, env);
 
-      // Every other route requires a verified Access identity
+      // Every other route requires an authenticated identity
       if (!user) return errorResponse('Unauthorized', 401);
 
       // Writes require an admin; viewers (non-cwprop signed-in users) are read-only

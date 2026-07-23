@@ -2,7 +2,7 @@
 set -e
 
 # Cloudflare API Token (same as RMS deployment)
-export CLOUDFLARE_API_TOKEN="cfut_SMISIYlzDd5Uq7VuBpb3Q9vy2ph1onpsJnAYale2b26926aa"
+export CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:?set it first — see Keeper record: Claude Wrangler Deploy}"
 
 PROJ_DIR="$HOME/claude-openclaw-copy/workspace/projects/pipeline-v2"
 ACCOUNT_ID="ea21224737d86d6da54d6b78c173141b"
